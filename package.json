@@ -1,0 +1,15 @@
+{
+    "name": "retry-storm-sentinel",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "start": "cds-serve"
+    },
+    "dependencies": {
+        "@sap/cds": "^9"
+    },
+    "devDependencies": {
+        "@cap-js/sqlite": "^2",
+        "@sap/cds-dk": "^9"
+    }
+}
