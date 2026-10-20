@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retry Storm Sentinel | Operational Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #38bdf8;
+            --accent-hover: #0284c7;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --success: #10b981;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 24px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 16px;
+            margin-bottom: 24px;
+        }
+
+        .badge {
+            background: #0369a1;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+
+        .controls-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 24px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        button {
+            background-color: var(--accent);
+            color: #0f172a;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            background-color: var(--accent-hover);
+            color: #fff;
+        }
+
+        button.btn-danger { background-color: var(--danger); color: white; }
+        button.btn-warning { background-color: var(--warning); color: #0f172a; }
+        button.btn-success { background-color: var(--success); color: white; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        h2 {
+            margin-top: 0;
+            font-size: 1.25rem;
+            color: var(--accent);
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            margin-top: 12px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        th { color: var(--text-secondary); }
+
+        .severity-Critical { color: var(--danger); font-weight: bold; }
+        .severity-High { color: var(--warning); font-weight: bold; }
+        .severity-Info { color: var(--accent); }
+
+        .status-Open { background: rgba(239, 68, 68, 0.2); color: #fca5a5; padding: 2px 6px; border-radius: 4px; }
+        .status-Acknowledged { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; padding: 2px 6px; border-radius: 4px; }
+
+        .action-link {
+            cursor: pointer;
+            color: var(--accent);
+            text-decoration: underline;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1 style="margin: 0; font-size: 1.6rem;">🛡️ Retry Storm Sentinel</h1>
+            <span style="color: var(--text-secondary); font-size: 0.9rem;">SAP Cloud Integration • Backlog & Retry Monitor</span>
+        </div>
+        <span class="badge">Prototype Environment</span>
+    </div>
+
+    <!-- Simulator Control Bar -->
+    <div class="controls-card">
+        <h3 style="margin: 0 0 8px 0;">⚡ Scenario Simulator Controller</h3>
+        <p style="margin: 0; color: var(--text-secondary); font-size: 0.85rem;">Inject synthetic metrics to test deterministic detection rules without live SAP backend risks.</p>
+        <div class="btn-group">
+            <button class="btn-success" onclick="runScenario('NORMAL')">🟢 Simulate Normal Traffic</button>
+            <button class="btn-danger" onclick="runScenario('RETRY_STORM')">🚨 Trigger Retry Storm</button>
+            <button class="btn-warning" onclick="runScenario('QUEUE_GROWTH')">📈 Trigger Queue Growth</button>
+            <button class="btn-warning" onclick="runScenario('PERSISTENT_BACKLOG')">⏳ Old Message Backlog</button>
+            <button class="btn-success" onclick="runScenario('RECOVERY')">🔄 Simulate Recovery</button>
+            <button onclick="refreshData()">🔄 Refresh Data</button>
+        </div>
+        <div id="simLog" style="margin-top: 10px; font-family: monospace; font-size: 0.85rem; color: var(--accent);"></div>
+    </div>
+
+    <div class="grid">
+        <!-- Monitored Interfaces -->
+        <div class="card">
+            <h2>📡 Monitored Interfaces</h2>
+            <table id="interfacesTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Path</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="3">Loading interfaces...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Triggered Alerts -->
+        <div class="card">
+            <h2>🔔 Real-time Alerts</h2>
+            <table id="alertsTable">
+                <thead>
+                    <tr>
+                        <th>Rule Code</th>
+                        <th>Severity</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="4">No active alerts recorded.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        async function fetchJSON(url, options = {}) {
+            const res = await fetch(url, options);
+            return await res.json();
+        }
+
+        async function refreshData() {
+            try {
+                // Fetch interfaces
+                const ifacesData = await fetchJSON('/odata/v4/monitoring/Interfaces');
+                const tbodyIfaces = document.querySelector('#interfacesTable tbody');
+                tbodyIfaces.innerHTML = (ifacesData.value || []).map(i => `
+                    <tr>
+                        <td><strong>${i.name}</strong></td>
+                        <td style="color: var(--text-secondary); font-size: 0.8rem;">${i.sourceSystem} → ${i.targetSystem}</td>
+                        <td><span style="color: var(--success);">● Active</span></td>
+                    </tr>
+                `).join('') || '<tr><td colspan="3">No interfaces found</td></tr>';
+
+                // Fetch alerts
+                const alertsData = await fetchJSON('/odata/v4/monitoring/Alerts?$orderby=detectedAt desc');
+                const tbodyAlerts = document.querySelector('#alertsTable tbody');
+                tbodyAlerts.innerHTML = (alertsData.value || []).map(a => `
+                    <tr>
+                        <td><strong>${a.ruleCode}</strong><br><small style="color: var(--text-secondary);">${a.summary}</small></td>
+                        <td class="severity-${a.severity}">${a.severity}</td>
+                        <td><span class="status-${a.status}">${a.status}</span></td>
+                        <td>
+                            ${a.status === 'Open' ? `<button style="padding: 4px 8px; font-size: 0.75rem;" onclick="acknowledgeAlert('${a.ID}')">Acknowledge</button>` : '✓ Done'}
+                        </td>
+                    </tr>
+                `).join('') || '<tr><td colspan="4">No alerts recorded yet.</td></tr>';
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function runScenario(scenario) {
+            const log = document.getElementById('simLog');
+            log.innerText = `Executing scenario: ${scenario}...`;
+            try {
+                const res = await fetch('/odata/v4/monitoring/triggerSimulation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scenario: scenario })
+                });
+                const data = await res.json();
+                log.innerText = `Result: ${data.value || JSON.stringify(data)}`;
+                await refreshData();
+            } catch (err) {
+                log.innerText = `Simulation failed: ${err.message}`;
+            }
+        }
+
+        async function acknowledgeAlert(alertId) {
+            try {
+                await fetch(`/odata/v4/monitoring/Alerts(${alertId})/MonitoringService.acknowledge`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ acknowledgedBy: 'Operator (Web Dashboard)' })
+                });
+                await refreshData();
+            } catch (err) {
+                alert(`Error acknowledging alert: ${err.message}`);
+            }
+        }
+
+        // Initial load
+        refreshData();
+    </script>
+</body>
+</html>
