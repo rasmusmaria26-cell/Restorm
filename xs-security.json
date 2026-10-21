@@ -1,0 +1,69 @@
+{
+  "xsappname": "retry-storm-sentinel",
+  "tenant-mode": "dedicated",
+  "description": "Security configuration for Retry Storm Sentinel on SAP BTP",
+  "scopes": [
+    {
+      "name": "$XSAPPNAME.SupportViewer",
+      "description": "Read-only access to integration interfaces, queue snapshots, and alert catalog"
+    },
+    {
+      "name": "$XSAPPNAME.SupportOperator",
+      "description": "Operational privileges to acknowledge alerts, resolve incidents, and trigger test simulations"
+    },
+    {
+      "name": "$XSAPPNAME.SimulatorAdmin",
+      "description": "Administrative control to reset database seed and manage operational telemetry parameters"
+    }
+  ],
+  "attributes": [],
+  "role-templates": [
+    {
+      "name": "SupportViewer",
+      "description": "Read-only access to Retry Storm Sentinel telemetry and active alerts",
+      "scope-references": [
+        "$XSAPPNAME.SupportViewer"
+      ]
+    },
+    {
+      "name": "SupportOperator",
+      "description": "Operational authority to acknowledge, resolve, and simulate queue telemetry",
+      "scope-references": [
+        "$XSAPPNAME.SupportViewer",
+        "$XSAPPNAME.SupportOperator"
+      ]
+    },
+    {
+      "name": "SimulatorAdmin",
+      "description": "Administrative authority for prototype seed reset and full governance",
+      "scope-references": [
+        "$XSAPPNAME.SupportViewer",
+        "$XSAPPNAME.SupportOperator",
+        "$XSAPPNAME.SimulatorAdmin"
+      ]
+    }
+  ],
+  "role-collections": [
+    {
+      "name": "RetryStorm_SupportViewer",
+      "description": "Retry Storm Sentinel - Support Viewer Role Collection",
+      "role-template-references": [
+        "$XSAPPNAME.SupportViewer"
+      ]
+    },
+    {
+      "name": "RetryStorm_SupportOperator",
+      "description": "Retry Storm Sentinel - Support Operator Role Collection",
+      "role-template-references": [
+        "$XSAPPNAME.SupportOperator"
+      ]
+    },
+    {
+      "name": "RetryStorm_SimulatorAdmin",
+      "description": "Retry Storm Sentinel - Simulator Administrator Role Collection",
+      "role-template-references": [
+        "$XSAPPNAME.SimulatorAdmin"
+      ]
+    }
+  ]
+}

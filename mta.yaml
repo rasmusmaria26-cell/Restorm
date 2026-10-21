@@ -1,0 +1,45 @@
+_schema-version: '3.1'
+ID: retry-storm-sentinel
+description: Retry Storm Sentinel — Integration Queue Telemetry & AI Grounded Incident Explainer
+version: 1.0.0
+
+modules:
+  # ------------------------------------------------------------
+  # CAP Server Module (Node.js OData V4 Service & Web App)
+  # ------------------------------------------------------------
+  - name: retry-storm-sentinel-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      buildpack: nodejs_buildpack
+      readiness-health-check-type: http
+      readiness-health-check-http-endpoint: /
+    build-parameters:
+      builder: npm
+    provides:
+      - name: srv-api
+        properties:
+          srv-url: ${default-url}
+    requires:
+      - name: retry-storm-sentinel-auth
+
+resources:
+  # ------------------------------------------------------------
+  # XSUAA Security Service Instance
+  # ------------------------------------------------------------
+  - name: retry-storm-sentinel-auth
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: xsuaa
+      service-plan: application
+      path: ./xs-security.json
+      config:
+        xsappname: retry-storm-sentinel-${org}-${space}
+        tenant-mode: dedicated
+
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm ci
+        - npx cds build --production

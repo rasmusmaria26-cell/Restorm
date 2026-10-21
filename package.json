@@ -1,43 +1,49 @@
 {
-    "name": "retry-storm-sentinel",
-    "version": "1.0.0",
-    "private": true,
-    "scripts": {
-        "start": "cds-serve",
-        "test": "node --test test/**/*.test.js"
-    },
-    "dependencies": {
-        "@sap/cds": "^9"
-    },
-    "devDependencies": {
-        "@cap-js/sqlite": "^2",
-        "@sap/cds-dk": "^9"
-    },
-    "cds": {
-        "requires": {
-            "auth": {
-                "kind": "mocked",
-                "users": {
-                    "alice": {
-                        "roles": [
-                            "SupportViewer"
-                        ]
-                    },
-                    "bob": {
-                        "roles": [
-                            "SupportOperator",
-                            "SupportViewer"
-                        ]
-                    },
-                    "admin": {
-                        "roles": [
-                            "SimulatorAdmin",
-                            "SupportOperator",
-                            "SupportViewer"
-                        ]
-                    }
-                }
-            }
+  "name": "retry-storm-sentinel",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "cds-serve",
+    "build": "cds build --production",
+    "test": "node --test test/**/*.test.js"
+  },
+  "dependencies": {
+    "@sap/cds": "^9"
+  },
+  "devDependencies": {
+    "@cap-js/sqlite": "^2",
+    "@sap/cds-dk": "^9"
+  },
+  "cds": {
+    "requires": {
+      "auth": {
+        "kind": "mocked",
+        "users": {
+          "alice": {
+            "roles": [
+              "SupportViewer"
+            ]
+          },
+          "bob": {
+            "roles": [
+              "SupportOperator",
+              "SupportViewer"
+            ]
+          },
+          "admin": {
+            "roles": [
+              "SimulatorAdmin",
+              "SupportOperator",
+              "SupportViewer"
+            ]
+          }
         }
+      },
+      "[production]": {
+        "auth": {
+          "kind": "xsuaa"
+        }
+      }
     }
+  }
 }
