@@ -552,6 +552,15 @@
                 btnExplain.addEventListener('click', () => openExplainDrawer(alert.ID));
                 actionsRow.appendChild(btnExplain);
 
+                // Export Postmortem Report Button
+                const btnReport = document.createElement('button');
+                btnReport.className = 'btn-quiet';
+                btnReport.type = 'button';
+                btnReport.textContent = 'Report (.md)';
+                btnReport.title = 'Download official incident postmortem report';
+                btnReport.addEventListener('click', () => handleDownloadReport(alert.ID, alert.ruleCode));
+                actionsRow.appendChild(btnReport);
+
                 card.append(cardHeader, evidenceLine, metaRow, actionsRow);
                 container.appendChild(card);
             }
@@ -597,6 +606,32 @@
 
             const now = new Date();
             updatedEl.textContent = `Updated at ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+        }
+
+        // Export Official Incident Postmortem Markdown Document
+        async function handleDownloadReport(alertId, ruleCode = 'INCIDENT') {
+            if (!alertId) return;
+            try {
+                const data = await fetchJSON(`/odata/v4/monitoring/Alerts(${encodeURIComponent(alertId)})/MonitoringService.exportIncidentReport`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ format: 'markdown' })
+                });
+
+                const markdownContent = data.value || data;
+                const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Incident-Postmortem-${ruleCode}-${String(alertId).slice(0, 8)}.md`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                console.error('Failed to export incident postmortem:', err);
+                alert('Could not download incident report: ' + (err.message || 'Error'));
+            }
         }
 
         // Grounded Incident Explanation Drawer Logic
@@ -1044,9 +1079,18 @@
             const drawer = document.getElementById('explainDrawer');
             const closeX = document.getElementById('drawerCloseX');
             const closeBtn = document.getElementById('drawerCloseBtn');
+            const exportBtn = document.getElementById('drawerExportBtn');
 
             if (closeX) closeX.addEventListener('click', closeExplainDrawer);
             if (closeBtn) closeBtn.addEventListener('click', closeExplainDrawer);
+            if (exportBtn) {
+                exportBtn.addEventListener('click', () => {
+                    if (activeExplainAlertId) {
+                        const alert = latestAlerts.find(a => a.ID === activeExplainAlertId);
+                        handleDownloadReport(activeExplainAlertId, alert ? alert.ruleCode : 'INCIDENT');
+                    }
+                });
+            }
 
             if (drawer) {
                 drawer.addEventListener('click', (e) => {

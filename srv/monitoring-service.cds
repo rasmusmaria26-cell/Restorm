@@ -16,6 +16,8 @@ service MonitoringService @(requires: 'authenticated-user') {
         action resolveAlert(resolvedBy: String) returns Alerts;
 
         action explain() returns LargeString;
+
+        action exportIncidentReport(format: String) returns LargeString;
     };
 
     @readonly

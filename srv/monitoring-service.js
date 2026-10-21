@@ -1,6 +1,7 @@
 const cds = require('@sap/cds');
 const { generateSnapshotData, ALLOWED_SCENARIOS } = require('./core/simulator');
 const { generateGroundedExplanation } = require('./ai/explanationService');
+const { generateMarkdownReport } = require('./core/reportGenerator');
 const {
     validateIntegerBound,
     validateTimestamp,
@@ -85,6 +86,49 @@ module.exports = class MonitoringService extends cds.ApplicationService {
 
             await UPDATE(Alerts, alertId).with({ aiExplanation: explanationStr });
             return explanationStr;
+        });
+
+        // Action: Export Incident Postmortem Report (Markdown / JSON)
+        this.on('exportIncidentReport', 'Alerts', async (req) => {
+            const alertId = req.params[0]?.ID || req.params[0];
+            if (!alertId || typeof alertId !== 'string') {
+                return req.reject(400, 'Invalid alert ID');
+            }
+
+            const alert = await SELECT.one.from(Alerts).where({ ID: alertId });
+            if (!alert) return req.reject(404, `Alert ${alertId} not found`);
+
+            const iface = await SELECT.one.from(Interfaces).where({ ID: alert.interface_ID });
+            const runbook = await SELECT.one.from(RunbookEntries).where({ ruleCode: alert.ruleCode });
+
+            const format = (req.data?.format || 'markdown').toLowerCase();
+            if (format === 'json') {
+                let metrics = {};
+                try { metrics = JSON.parse(alert.observedMetrics || '{}'); } catch(e) { metrics = { raw: alert.observedMetrics }; }
+                let explanation = null;
+                try { if (alert.aiExplanation) explanation = JSON.parse(alert.aiExplanation); } catch(e) {}
+
+                return JSON.stringify({
+                    reportType: 'IncidentPostmortem',
+                    alertId: alert.ID,
+                    ruleCode: alert.ruleCode,
+                    severity: alert.severity,
+                    status: alert.status,
+                    detectedAt: alert.detectedAt,
+                    acknowledgedAt: alert.acknowledgedAt,
+                    acknowledgedBy: alert.acknowledgedBy,
+                    resolvedAt: alert.resolvedAt,
+                    resolvedBy: alert.resolvedBy,
+                    repeatCount: alert.repeatCount,
+                    interface: iface ? { ID: iface.ID, name: iface.name, sourceSystem: iface.sourceSystem, targetSystem: iface.targetSystem } : null,
+                    observedMetrics: metrics,
+                    explanation: explanation,
+                    runbookCited: runbook ? { ID: runbook.ID, title: runbook.title } : null
+                }, null, 2);
+            }
+
+            // Default to standardized Markdown report
+            return generateMarkdownReport(alert, iface, runbook);
         });
 
         // Action: Ingest external integration telemetry
@@ -238,6 +282,14 @@ module.exports = class MonitoringService extends cds.ApplicationService {
             // Delete all generated alerts and runtime snapshots
             await DELETE.from(Alerts);
             await DELETE.from(QueueSnapshots);
+
+            // Reset interfaces to default threshold policies
+            await UPDATE(Interfaces).with({
+                maxRetryThreshold: 100,
+                queueGrowthLimit: 200,
+                oldMessageAgeLimitSeconds: 600,
+                recoveryStalledBacklog: 100
+            });
 
             const allInterfaces = await SELECT.from(Interfaces);
             const now = new Date();
