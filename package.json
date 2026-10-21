@@ -5,7 +5,7 @@
   "scripts": {
     "start": "cds-serve",
     "build": "cds build --production",
-    "test": "node --test test/**/*.test.js"
+    "test": "node --test --test-concurrency=1 test/**/*.test.js"
   },
   "dependencies": {
     "@sap/cds": "^9"

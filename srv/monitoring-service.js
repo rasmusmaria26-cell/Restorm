@@ -1,7 +1,11 @@
 const cds = require('@sap/cds');
-const { evaluateMetrics } = require('./core/detectionEngine');
 const { generateSnapshotData, ALLOWED_SCENARIOS } = require('./core/simulator');
 const { generateGroundedExplanation } = require('./ai/explanationService');
+const {
+    validateIntegerBound,
+    validateTimestamp,
+    processSnapshotAndEvaluate
+} = require('./core/ingestionPipeline');
 
 /**
  * MonitoringService Controller
@@ -83,6 +87,78 @@ module.exports = class MonitoringService extends cds.ApplicationService {
             return explanationStr;
         });
 
+        // Action: Ingest external integration telemetry
+        this.on('ingestTelemetry', async (req) => {
+            const data = req.data || {};
+            const { interfaceId, capturedAt } = data;
+
+            // 1. Validate interfaceId
+            if (!interfaceId || typeof interfaceId !== 'string' || interfaceId.length > 36) {
+                return req.reject(400, "Invalid 'interfaceId' format: expected a valid UUID string");
+            }
+
+            const targetInterface = await SELECT.one.from(Interfaces).where({ ID: interfaceId });
+            if (!targetInterface) {
+                return req.reject(404, `Interface with ID '${interfaceId}' does not exist`);
+            }
+            if (!targetInterface.active) {
+                return req.reject(400, `Interface '${targetInterface.name}' is currently inactive; telemetry rejected`);
+            }
+
+            // 2. Validate numeric bounds
+            const pendingCheck = validateIntegerBound(data.pendingCount, 'pendingCount', 0, 1000000);
+            if (!pendingCheck.valid) return req.reject(400, pendingCheck.error);
+
+            const failedCheck = validateIntegerBound(data.failedCount, 'failedCount', 0, 1000000);
+            if (!failedCheck.valid) return req.reject(400, failedCheck.error);
+
+            const retryCheck = validateIntegerBound(data.retryAttempts, 'retryAttempts', 0, 1000000);
+            if (!retryCheck.valid) return req.reject(400, retryCheck.error);
+
+            const successCheck = validateIntegerBound(data.successCount, 'successCount', 0, 1000000);
+            if (!successCheck.valid) return req.reject(400, successCheck.error);
+
+            const ageCheck = validateIntegerBound(data.oldestPendingAgeSeconds, 'oldestPendingAgeSeconds', 0, 2592000);
+            if (!ageCheck.valid) return req.reject(400, ageCheck.error);
+
+            // 3. Validate timestamp
+            const timeCheck = validateTimestamp(capturedAt);
+            if (!timeCheck.valid) return req.reject(400, timeCheck.error);
+
+            // 4. Assemble snapshot
+            const snapshotData = {
+                interface_ID: targetInterface.ID,
+                capturedAt: timeCheck.value,
+                pendingCount: pendingCheck.value,
+                failedCount: failedCheck.value,
+                retryAttempts: retryCheck.value,
+                successCount: successCheck.value,
+                oldestPendingAgeSeconds: ageCheck.value
+            };
+
+            // 5. Execute core ingestion and evaluation pipeline
+            const result = await processSnapshotAndEvaluate(
+                { QueueSnapshots, Alerts },
+                targetInterface.ID,
+                snapshotData,
+                `External Ingestion [${targetInterface.name}]`
+            );
+
+            return JSON.stringify({
+                status: result.status,
+                interfaceId: targetInterface.ID,
+                interfaceName: targetInterface.name,
+                capturedAt: snapshotData.capturedAt,
+                alertTriggered: result.alertTriggered,
+                alertAction: result.alertAction,
+                ruleCode: result.ruleCode || null,
+                severity: result.severity || null,
+                repeatCount: result.repeatCount || 0,
+                summary: result.summary,
+                message: result.message
+            }, null, 2);
+        });
+
         // Action: Trigger scenario simulation & evaluate detection rules
         this.on('triggerSimulation', async (req) => {
             const { scenario, interfaceId } = req.data || {};
@@ -107,68 +183,18 @@ module.exports = class MonitoringService extends cds.ApplicationService {
 
             if (!targetInterface) return req.reject(400, 'No active interface found for simulation');
 
-            // 3. Retrieve preceding snapshot for differential analysis (e.g. Rule D: Recovery Stalled)
-            const previousSnapshot = await SELECT.one.from(QueueSnapshots)
-                .where({ interface_ID: targetInterface.ID })
-                .orderBy('capturedAt desc');
-
-            // 4. Generate snapshot via Simulator
+            // 3. Generate snapshot via Simulator
             const snapshotData = generateSnapshotData(scenario, targetInterface.ID);
-            await INSERT.into(QueueSnapshots).entries(snapshotData);
 
-            // 5. Evaluate metrics via Detection Engine (passing previous snapshot)
-            const detectionResult = evaluateMetrics(snapshotData, previousSnapshot);
+            // 4. Execute core evaluation pipeline
+            const result = await processSnapshotAndEvaluate(
+                { QueueSnapshots, Alerts },
+                targetInterface.ID,
+                snapshotData,
+                `Scenario [${scenario || 'NORMAL'}] executed`
+            );
 
-            // 6. Persist or Deduplicate Alert if rule conditions are met
-            if (detectionResult.triggered) {
-                const now = new Date();
-                const observedMetrics = JSON.stringify({
-                    pendingCount: snapshotData.pendingCount,
-                    retryAttempts: snapshotData.retryAttempts,
-                    failedCount: snapshotData.failedCount,
-                    successCount: snapshotData.successCount,
-                    oldestPendingAgeSeconds: snapshotData.oldestPendingAgeSeconds,
-                    timestamp: snapshotData.capturedAt
-                });
-
-                // Deduplication check: Is there an existing Open alert for this interface & rule?
-                const existingOpenAlert = await SELECT.one.from(Alerts).where({
-                    interface_ID: targetInterface.ID,
-                    ruleCode: detectionResult.ruleCode,
-                    status: 'Open'
-                });
-
-                if (existingOpenAlert) {
-                    // Deduplicate: extend observation window, increment repeat count, and update current metrics
-                    const updatedRepeatCount = (existingOpenAlert.repeatCount || 1) + 1;
-                    await UPDATE(Alerts, existingOpenAlert.ID).with({
-                        windowEnd: now.toISOString(),
-                        observedMetrics: observedMetrics,
-                        summary: detectionResult.summary,
-                        repeatCount: updatedRepeatCount
-                    });
-
-                    return `Scenario [${scenario || 'NORMAL'}] executed: Snapshot saved. Active Alert [${detectionResult.ruleCode}] updated (deduplicated, occurrence #${updatedRepeatCount}).`;
-                }
-
-                // New incident: persist new Alert record
-                await INSERT.into(Alerts).entries({
-                    interface_ID: targetInterface.ID,
-                    ruleCode: detectionResult.ruleCode,
-                    severity: detectionResult.severity,
-                    status: 'Open',
-                    repeatCount: 1,
-                    detectedAt: now.toISOString(),
-                    windowStart: new Date(now.getTime() - 15 * 60000).toISOString(),
-                    windowEnd: now.toISOString(),
-                    observedMetrics: observedMetrics,
-                    summary: detectionResult.summary
-                });
-
-                return `Scenario [${scenario || 'NORMAL'}] executed: Snapshot saved & Alert [${detectionResult.ruleCode}] created (${detectionResult.severity}).`;
-            }
-
-            return `Scenario [${scenario || 'NORMAL'}] executed: Snapshot saved. System operating normally.`;
+            return result.message;
         });
 
         // Administrative Action: Reset database to clean baseline seed

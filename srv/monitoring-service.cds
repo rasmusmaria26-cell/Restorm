@@ -21,6 +21,18 @@ service MonitoringService @(requires: 'authenticated-user') {
     @readonly
     entity RunbookEntries as projection on my.RunbookEntries;
 
+    // External telemetry ingestion endpoint
+    @(requires: ['SimulatorAdmin', 'SupportOperator'])
+    action ingestTelemetry(
+        interfaceId             : UUID,
+        capturedAt              : Timestamp,
+        pendingCount            : Integer,
+        failedCount             : Integer,
+        retryAttempts           : Integer,
+        successCount            : Integer,
+        oldestPendingAgeSeconds : Integer
+    ) returns String;
+
     // Simulation trigger endpoint
     @(requires: ['SimulatorAdmin', 'SupportOperator'])
     action triggerSimulation(scenario: String, interfaceId: UUID) returns String;
