@@ -7,6 +7,7 @@ const {
     validateTimestamp,
     processSnapshotAndEvaluate
 } = require('./core/ingestionPipeline');
+const { buildTopologyGraph } = require('./core/topologyService');
 
 /**
  * MonitoringService Controller
@@ -14,7 +15,7 @@ const {
  */
 module.exports = class MonitoringService extends cds.ApplicationService {
     async init() {
-        const { Alerts, Interfaces, QueueSnapshots, RunbookEntries } = this.entities;
+        const { Alerts, Interfaces, QueueSnapshots, RunbookEntries, Systems, Connections } = this.entities;
 
         // Action: Acknowledge an open alert
         this.on('acknowledge', 'Alerts', async (req) => {
@@ -129,6 +130,33 @@ module.exports = class MonitoringService extends cds.ApplicationService {
 
             // Default to standardized Markdown report
             return generateMarkdownReport(alert, iface, runbook);
+        });
+
+        // Function: Landscape Topology Graph & Live Health
+        this.on('getTopology', async (req) => {
+            const systems = await SELECT.from(Systems);
+            const connections = await SELECT.from(Connections);
+            const interfaces = await SELECT.from(Interfaces);
+
+            // Fetch snapshots in reverse chronological order to find latest per interface
+            const allSnapshots = await SELECT.from(QueueSnapshots).orderBy('capturedAt desc');
+            const latestSnapshots = [];
+            const seenIface = new Set();
+            for (const snap of allSnapshots) {
+                const ifaceId = snap.interface_ID;
+                if (ifaceId && !seenIface.has(ifaceId)) {
+                    seenIface.add(ifaceId);
+                    latestSnapshots.push(snap);
+                }
+            }
+
+            // Fetch active (Open or Acknowledged) alerts
+            const activeAlerts = await SELECT.from(Alerts)
+                .where({ status: { '!=': 'Resolved' } })
+                .and({ status: { '!=': 'Closed' } });
+
+            const topology = buildTopologyGraph(systems, connections, interfaces, latestSnapshots, activeAlerts);
+            return JSON.stringify(topology, null, 2);
         });
 
         // Action: Ingest external integration telemetry

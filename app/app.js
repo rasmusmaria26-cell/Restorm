@@ -49,6 +49,9 @@
         let currentUsername = 'bob';
         let latestInterfaces = [];
         let latestAlerts = [];
+        let latestTopology = null;
+        let selectedTopologyFilter = null; // { type: 'node' | 'edge', id?: string, interfaceId?: string, name: string }
+        let activeViewMode = 'cards'; // 'cards' | 'topology'
         let activeExplainAlertId = null;
         let isLiveStreamActive = false;
         let liveStreamTimer = null;
@@ -209,6 +212,366 @@
             svg.appendChild(dot);
 
             return svg;
+        }
+
+        // SVG Element Creation Helper (Zero innerHTML)
+        function createSvgElement(tag, attrs = {}) {
+            const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+            for (const [key, val] of Object.entries(attrs)) {
+                el.setAttribute(key, val);
+            }
+            return el;
+        }
+
+        // Filter alerts by selected node or edge in Topology
+        function getFilteredAlerts(alerts) {
+            if (!selectedTopologyFilter) return alerts;
+            if (selectedTopologyFilter.type === 'edge') {
+                return alerts.filter(a => {
+                    const ifaceId = a.interface_ID || a.interface?.ID;
+                    return ifaceId === selectedTopologyFilter.interfaceId;
+                });
+            }
+            if (selectedTopologyFilter.type === 'node' && latestTopology) {
+                const matchingEdges = (latestTopology.edges || []).filter(e =>
+                    e.source === selectedTopologyFilter.id || e.target === selectedTopologyFilter.id
+                );
+                const matchingIfaceIds = new Set(matchingEdges.map(e => e.interfaceId));
+                return alerts.filter(a => {
+                    const ifaceId = a.interface_ID || a.interface?.ID;
+                    return matchingIfaceIds.has(ifaceId);
+                });
+            }
+            return alerts;
+        }
+
+        // Update Topology Filter Banner
+        function updateTopologyFilterBanner() {
+            const banner = document.getElementById('topologyFilterBanner');
+            const textEl = document.getElementById('topologyFilterText');
+            if (!banner || !textEl) return;
+
+            if (selectedTopologyFilter) {
+                banner.style.display = 'flex';
+                if (selectedTopologyFilter.type === 'node') {
+                    textEl.textContent = `Filtered alerts by system: ${selectedTopologyFilter.name} (${selectedTopologyFilter.id})`;
+                } else {
+                    textEl.textContent = `Filtered alerts by channel: ${selectedTopologyFilter.name}`;
+                }
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+
+        function toggleNodeFilter(node) {
+            if (selectedTopologyFilter && selectedTopologyFilter.type === 'node' && selectedTopologyFilter.id === node.id) {
+                selectedTopologyFilter = null;
+            } else {
+                selectedTopologyFilter = { type: 'node', id: node.id, name: node.name };
+            }
+            updateTopologyFilterBanner();
+            if (latestTopology) renderTopologySvg(latestTopology);
+            renderAlerts(getFilteredAlerts(latestAlerts), latestInterfaces);
+        }
+
+        function toggleEdgeFilter(edge) {
+            if (selectedTopologyFilter && selectedTopologyFilter.type === 'edge' && selectedTopologyFilter.interfaceId === edge.interfaceId) {
+                selectedTopologyFilter = null;
+            } else {
+                selectedTopologyFilter = { type: 'edge', interfaceId: edge.interfaceId, name: edge.name };
+            }
+            updateTopologyFilterBanner();
+            if (latestTopology) renderTopologySvg(latestTopology);
+            renderAlerts(getFilteredAlerts(latestAlerts), latestInterfaces);
+        }
+
+        // Render Topology Summary Status Pills
+        function renderTopologySummary(topology) {
+            if (!topology || !topology.summary) return;
+            const summary = topology.summary;
+
+            const healthyPill = document.getElementById('topoHealthyPill');
+            const warningPill = document.getElementById('topoWarningPill');
+            const criticalPill = document.getElementById('topoCriticalPill');
+
+            if (healthyPill) {
+                healthyPill.textContent = `${summary.healthyCount} Healthy`;
+            }
+            if (warningPill) {
+                if (summary.warningCount > 0) {
+                    warningPill.textContent = `${summary.warningCount} Warning`;
+                    warningPill.style.display = 'inline-flex';
+                } else {
+                    warningPill.style.display = 'none';
+                }
+            }
+            if (criticalPill) {
+                if (summary.criticalCount > 0) {
+                    criticalPill.textContent = `${summary.criticalCount} Critical`;
+                    criticalPill.style.display = 'inline-flex';
+                } else {
+                    criticalPill.style.display = 'none';
+                }
+            }
+        }
+
+        // Render Visual Landscape Topology SVG
+        function renderTopologySvg(topology) {
+            const container = document.getElementById('topologySvgContainer');
+            if (!container || !topology) return;
+            container.replaceChildren();
+
+            const svg = createSvgElement('svg', {
+                viewBox: '0 0 700 285',
+                class: 'topology-svg',
+                role: 'img',
+                'aria-label': 'Integration system landscape topology map'
+            });
+
+            // 1. Defs: Arrowhead markers
+            const defs = createSvgElement('defs');
+            function createArrowMarker(id, fill) {
+                const marker = createSvgElement('marker', {
+                    id: id,
+                    viewBox: '0 0 10 10',
+                    refX: '8',
+                    refY: '5',
+                    markerWidth: '6',
+                    markerHeight: '6',
+                    orient: 'auto-start-reverse'
+                });
+                const path = createSvgElement('path', { d: 'M 0 1.5 L 8 5 L 0 8.5 z', fill: fill });
+                marker.appendChild(path);
+                return marker;
+            }
+            defs.appendChild(createArrowMarker('arrow-healthy', '#2E8B6A'));
+            defs.appendChild(createArrowMarker('arrow-warning', '#E08A00'));
+            defs.appendChild(createArrowMarker('arrow-critical', '#D93A2F'));
+            svg.appendChild(defs);
+
+            // 2. Edges / Channels
+            const edgesGroup = createSvgElement('g', { class: 'topo-edges-group' });
+
+            const edgeGeometries = {
+                '11111111-1111-1111-1111-111111111111': {
+                    d: 'M 205 67 C 320 18, 380 18, 487 67',
+                    labelX: 350,
+                    labelY: 20
+                },
+                '22222222-2222-2222-2222-222222222222': {
+                    d: 'M 540 99 C 490 142, 490 142, 540 183',
+                    labelX: 475,
+                    labelY: 142
+                },
+                '33333333-3333-3333-3333-333333333333': {
+                    d: 'M 205 217 C 235 217, 235 155, 252 155',
+                    labelX: 200,
+                    labelY: 180
+                }
+            };
+
+            for (const edge of topology.edges || []) {
+                const isSelected = selectedTopologyFilter && selectedTopologyFilter.type === 'edge' && selectedTopologyFilter.interfaceId === edge.interfaceId;
+                const statusColor = edge.status === 'Critical' ? '#D93A2F' : edge.status === 'Warning' ? '#E08A00' : '#2E8B6A';
+                const markerUrl = edge.status === 'Critical' ? 'url(#arrow-critical)' : edge.status === 'Warning' ? 'url(#arrow-warning)' : 'url(#arrow-healthy)';
+
+                const gEdge = createSvgElement('g', {
+                    class: `topo-edge ${edge.status === 'Critical' ? 'is-critical' : ''} ${isSelected ? 'is-selected' : ''}`
+                });
+
+                const geom = edgeGeometries[edge.interfaceId] || {
+                    d: 'M 205 67 L 490 67',
+                    labelX: 350,
+                    labelY: 67
+                };
+
+                // Underlying hit path for easy clicking
+                const hitPath = createSvgElement('path', {
+                    d: geom.d,
+                    fill: 'none',
+                    stroke: 'transparent',
+                    'stroke-width': '20',
+                    style: 'cursor: pointer;'
+                });
+                hitPath.addEventListener('click', () => toggleEdgeFilter(edge));
+                gEdge.appendChild(hitPath);
+
+                // Visible connection line
+                const linePath = createSvgElement('path', {
+                    class: 'topo-edge-line',
+                    d: geom.d,
+                    fill: 'none',
+                    stroke: statusColor,
+                    'stroke-width': '2.5',
+                    'marker-end': markerUrl
+                });
+                linePath.addEventListener('click', () => toggleEdgeFilter(edge));
+                gEdge.appendChild(linePath);
+
+                // Edge Channel Badge
+                const metrics = edge.metrics || { pendingCount: 0, retryAttempts: 0 };
+                const badgeW = 120;
+                const badgeH = 28;
+                const badgeX = geom.labelX - (badgeW / 2);
+                const badgeY = geom.labelY - (badgeH / 2);
+
+                const badgeBg = createSvgElement('rect', {
+                    x: String(badgeX),
+                    y: String(badgeY),
+                    width: String(badgeW),
+                    height: String(badgeH),
+                    rx: '4',
+                    ry: '4',
+                    fill: edge.status === 'Critical' ? '#FBE3E0' : edge.status === 'Warning' ? '#FCEFD9' : '#FFFFFF',
+                    stroke: statusColor,
+                    'stroke-width': isSelected ? '2' : '1',
+                    style: 'cursor: pointer;'
+                });
+                badgeBg.addEventListener('click', () => toggleEdgeFilter(edge));
+                gEdge.appendChild(badgeBg);
+
+                const labelTitle = createSvgElement('text', {
+                    x: String(geom.labelX),
+                    y: String(badgeY + 11),
+                    'font-size': '9',
+                    'font-weight': '600',
+                    'text-anchor': 'middle',
+                    fill: edge.status === 'Critical' ? '#9C1F17' : edge.status === 'Warning' ? '#7A4A00' : '#17212B',
+                    style: 'pointer-events: none;'
+                });
+                labelTitle.textContent = edge.name;
+                gEdge.appendChild(labelTitle);
+
+                const labelSub = createSvgElement('text', {
+                    x: String(geom.labelX),
+                    y: String(badgeY + 22),
+                    'font-size': '8.5',
+                    'text-anchor': 'middle',
+                    fill: edge.status === 'Critical' ? '#C62E24' : '#5B6B7A',
+                    style: 'pointer-events: none;'
+                });
+                labelSub.textContent = `${metrics.pendingCount} queued • ${metrics.retryAttempts} retries`;
+                gEdge.appendChild(labelSub);
+
+                edgesGroup.appendChild(gEdge);
+            }
+            svg.appendChild(edgesGroup);
+
+            // 3. System Landscape Nodes
+            const nodesGroup = createSvgElement('g', { class: 'topo-nodes-group' });
+
+            const TOPO_COORDS = {
+                WEBSHOP: { x: 30, y: 35, width: 175, height: 64 },
+                WMS:     { x: 30, y: 185, width: 175, height: 64 },
+                CPI:     { x: 260, y: 105, width: 180, height: 75 },
+                S4HANA:  { x: 495, y: 35, width: 175, height: 64 },
+                PAYGATE: { x: 495, y: 185, width: 175, height: 64 }
+            };
+
+            for (const node of topology.nodes || []) {
+                const coords = TOPO_COORDS[node.id] || { x: 30, y: 35, width: 175, height: 64 };
+                const isSelected = selectedTopologyFilter && selectedTopologyFilter.type === 'node' && selectedTopologyFilter.id === node.id;
+                const nodeColor = node.status === 'Critical' ? '#D93A2F' : node.status === 'Warning' ? '#E08A00' : '#2E8B6A';
+
+                const gNode = createSvgElement('g', {
+                    class: `topo-node ${isSelected ? 'is-selected' : ''}`
+                });
+                gNode.addEventListener('click', () => toggleNodeFilter(node));
+
+                // Node card rect
+                const nodeRect = createSvgElement('rect', {
+                    class: 'topo-node-rect',
+                    x: String(coords.x),
+                    y: String(coords.y),
+                    width: String(coords.width),
+                    height: String(coords.height),
+                    rx: '8',
+                    ry: '8',
+                    fill: '#FFFFFF',
+                    stroke: isSelected ? 'var(--color-harbor)' : nodeColor,
+                    'stroke-width': isSelected ? '2.5' : (node.status === 'Critical' ? '2' : '1.5')
+                });
+                gNode.appendChild(nodeRect);
+
+                // Category Tag
+                const catText = createSvgElement('text', {
+                    x: String(coords.x + 12),
+                    y: String(coords.y + 18),
+                    'font-size': '9',
+                    'font-weight': '600',
+                    fill: '#5B6B7A',
+                    'letter-spacing': '0.5'
+                });
+                catText.textContent = (node.category || 'SYSTEM').toUpperCase();
+                gNode.appendChild(catText);
+
+                // Health status indicator dot
+                const statusDot = createSvgElement('circle', {
+                    cx: String(coords.x + coords.width - 16),
+                    cy: String(coords.y + 15),
+                    r: '4.5',
+                    fill: nodeColor
+                });
+                gNode.appendChild(statusDot);
+
+                // System Name
+                const nameText = createSvgElement('text', {
+                    x: String(coords.x + 12),
+                    y: String(coords.y + 36),
+                    'font-size': '12',
+                    'font-weight': '600',
+                    fill: '#17212B'
+                });
+                nameText.textContent = node.name;
+                gNode.appendChild(nameText);
+
+                // Subtitle: Code • Tier
+                const subText = createSvgElement('text', {
+                    x: String(coords.x + 12),
+                    y: String(coords.y + 51),
+                    'font-size': '9.5',
+                    fill: '#5B6B7A'
+                });
+                subText.textContent = `${node.id} • ${node.tier}`;
+                gNode.appendChild(subText);
+
+                // Alert badge if node has active alerts
+                if (node.activeAlertCount > 0) {
+                    const alertBadgeW = 58;
+                    const alertBadgeH = 16;
+                    const alertBadgeX = coords.x + coords.width - alertBadgeW - 10;
+                    const alertBadgeY = coords.y + coords.height - alertBadgeH - 8;
+
+                    const aBadge = createSvgElement('rect', {
+                        x: String(alertBadgeX),
+                        y: String(alertBadgeY),
+                        width: String(alertBadgeW),
+                        height: String(alertBadgeH),
+                        rx: '4',
+                        ry: '4',
+                        fill: '#FBE3E0',
+                        stroke: '#D93A2F',
+                        'stroke-width': '0.8'
+                    });
+                    gNode.appendChild(aBadge);
+
+                    const aText = createSvgElement('text', {
+                        x: String(alertBadgeX + (alertBadgeW / 2)),
+                        y: String(alertBadgeY + 11),
+                        'font-size': '8.5',
+                        'font-weight': '600',
+                        'text-anchor': 'middle',
+                        fill: '#9C1F17'
+                    });
+                    aText.textContent = `! ${node.activeAlertCount} alert`;
+                    gNode.appendChild(aText);
+                }
+
+                nodesGroup.appendChild(gNode);
+            }
+            svg.appendChild(nodesGroup);
+
+            container.appendChild(svg);
         }
 
         // Render Interfaces Column
@@ -990,9 +1353,23 @@
                 const alertsData = await fetchJSON('/odata/v4/monitoring/Alerts?$expand=interface&$orderby=detectedAt desc');
                 latestAlerts = alertsData.value || [];
 
+                // Fetch landscape topology graph (Phase 4)
+                try {
+                    const topoRes = await fetchJSON('/odata/v4/monitoring/getTopology()');
+                    latestTopology = topoRes.value ? JSON.parse(topoRes.value) : topoRes;
+                } catch (e) {
+                    console.warn('[Topology] Failed to fetch topology graph:', e);
+                }
+
                 renderHeadline(latestInterfaces, latestAlerts);
+                if (latestTopology) {
+                    renderTopologySummary(latestTopology);
+                    if (activeViewMode === 'topology') {
+                        renderTopologySvg(latestTopology);
+                    }
+                }
                 renderInterfaces(latestInterfaces);
-                renderAlerts(latestAlerts, latestInterfaces);
+                renderAlerts(getFilteredAlerts(latestAlerts), latestInterfaces);
             } catch (err) {
                 const headlineTitle = document.getElementById('headlineTitle');
                 const headlineSubtitle = document.getElementById('headlineSubtitle');
@@ -1043,6 +1420,50 @@
 
         // Setup Event Listeners
         function initializeEvents() {
+            // View Mode Toggle (Cards vs Topology Map - Phase 4)
+            const btnCards = document.getElementById('viewToggleCards');
+            const btnTopology = document.getElementById('viewToggleTopology');
+            const cardsContainer = document.getElementById('interfacesContainer');
+            const topoWrapper = document.getElementById('topologyMapWrapper');
+
+            if (btnCards && btnTopology) {
+                btnCards.addEventListener('click', () => {
+                    activeViewMode = 'cards';
+                    btnCards.classList.add('is-active');
+                    btnCards.setAttribute('aria-selected', 'true');
+                    btnTopology.classList.remove('is-active');
+                    btnTopology.setAttribute('aria-selected', 'false');
+                    if (cardsContainer) cardsContainer.style.display = 'flex';
+                    if (topoWrapper) topoWrapper.style.display = 'none';
+                });
+
+                btnTopology.addEventListener('click', () => {
+                    activeViewMode = 'topology';
+                    btnTopology.classList.add('is-active');
+                    btnTopology.setAttribute('aria-selected', 'true');
+                    btnCards.classList.remove('is-active');
+                    btnCards.setAttribute('aria-selected', 'false');
+                    if (cardsContainer) cardsContainer.style.display = 'none';
+                    if (topoWrapper) {
+                        topoWrapper.style.display = 'flex';
+                        if (latestTopology) renderTopologySvg(latestTopology);
+                    }
+                });
+            }
+
+            // Clear Topology Filter Button
+            const btnResetFilter = document.getElementById('btnResetTopologyFilter');
+            if (btnResetFilter) {
+                btnResetFilter.addEventListener('click', () => {
+                    selectedTopologyFilter = null;
+                    updateTopologyFilterBanner();
+                    if (latestTopology && activeViewMode === 'topology') {
+                        renderTopologySvg(latestTopology);
+                    }
+                    renderAlerts(getFilteredAlerts(latestAlerts), latestInterfaces);
+                });
+            }
+
             // Live NOC Stream Toggle
             const liveToggle = document.getElementById('liveStreamToggle');
             if (liveToggle) {

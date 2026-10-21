@@ -1,0 +1,6 @@
+ID;code;name;category;environment;tier
+aaaaaaa1-1111-1111-1111-111111111111;WEBSHOP;E-Commerce Webshop;Source;Synthetic;Core
+aaaaaaa2-2222-2222-2222-222222222222;S4HANA;SAP S/4HANA;Target;Synthetic;Mission-Critical
+aaaaaaa3-3333-3333-3333-333333333333;PAYGATE;Payment Gateway;Target;Synthetic;Mission-Critical
+aaaaaaa4-4444-4444-4444-444444444444;WMS;Warehouse WMS;Source;Synthetic;Core
+aaaaaaa5-5555-5555-5555-555555555555;CPI;SAP BTP Cloud Integration;Middleware;Synthetic;Mission-Critical

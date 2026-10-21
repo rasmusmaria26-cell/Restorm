@@ -66,3 +66,27 @@ entity RunbookEntries : cuid, managed {
     limitations : LargeString;
     keywords    : String(255);
 }
+
+/**
+ * 9.5 Integration Systems & Landscape Nodes (Phase 4)
+ */
+entity Systems : cuid, managed {
+    code        : String(50); // E.g. WEBSHOP, S4HANA, PAYGATE, WMS, CPI
+    name        : String(100);
+    category    : String(50); // Source, Target, Middleware, EventBroker
+    environment : String(50) default 'Synthetic';
+    tier        : String(20) default 'Core'; // Mission-Critical, Core, Supporting
+}
+
+/**
+ * 9.6 Topology Connections / Channels (Phase 4)
+ */
+entity Connections : cuid, managed {
+    interface       : Association to Interfaces;
+    sourceSystem    : Association to Systems;
+    targetSystem    : Association to Systems;
+    component       : String(100); // E.g. "SAP Cloud Integration (CPI)", "Enterprise Event Mesh"
+    protocol        : String(50);  // E.g. "HTTPS / OData V4", "REST / HTTPS", "AMQP"
+    connectionType  : String(50);  // Asynchronous Queue, Asynchronous Batch, Event Stream
+}
+

@@ -1015,6 +1015,165 @@
             color: #137333;
             border: 1px solid #CEEAD6;
         }
+
+        /* View Toggle Group (Phase 4) */
+        .view-toggle-group {
+            background-color: var(--color-mist);
+            border: 1px solid var(--color-divider);
+            border-radius: 6px;
+            padding: 2px;
+            display: inline-flex;
+            gap: 2px;
+        }
+
+        .view-toggle-btn {
+            font-family: var(--font-body);
+            border: none;
+            background: transparent;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--color-slate);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .view-toggle-btn:hover:not(.is-active) {
+            color: var(--color-ink);
+        }
+
+        .view-toggle-btn.is-active {
+            background-color: var(--color-card-bg);
+            color: var(--color-ink);
+            font-weight: 600;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        }
+
+        /* Filter Banner */
+        .topology-filter-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #E8F0FE;
+            border: 1px solid #D2E3FC;
+            border-radius: 6px;
+            padding: 8px 14px;
+            font-size: 0.8125rem;
+            color: #1967D2;
+        }
+
+        .topology-filter-text {
+            font-weight: 500;
+        }
+
+        /* Topology Wrapper */
+        .topology-wrapper {
+            background-color: var(--color-card-bg);
+            border: 1px solid var(--color-divider);
+            border-radius: 8px;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .topology-summary-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-size: 0.75rem;
+            color: var(--color-slate);
+            border-bottom: 1px solid var(--color-divider-light);
+            padding-bottom: 10px;
+        }
+
+        .topology-pills-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .topology-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.6875rem;
+            font-weight: 600;
+        }
+
+        .topology-pill.is-healthy {
+            background-color: var(--color-healthy-badge-bg);
+            color: var(--color-healthy-text);
+        }
+
+        .topology-pill.is-warning {
+            background-color: var(--color-high-badge-bg);
+            color: var(--color-high-badge-text);
+        }
+
+        .topology-pill.is-critical {
+            background-color: var(--color-critical-badge-bg);
+            color: var(--color-critical-badge-text);
+        }
+
+        .topology-svg-container {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        .topology-svg {
+            display: block;
+            width: 100%;
+            min-width: 520px;
+            height: auto;
+        }
+
+        /* SVG Graph Classes */
+        .topo-node {
+            cursor: pointer;
+            transition: transform 0.15s ease;
+        }
+
+        .topo-node:hover .topo-node-rect {
+            stroke: var(--color-harbor);
+            stroke-width: 2;
+        }
+
+        .topo-node.is-selected .topo-node-rect {
+            stroke: var(--color-harbor);
+            stroke-width: 2.5;
+            filter: drop-shadow(0 0 6px rgba(31, 95, 191, 0.3));
+        }
+
+        .topo-edge {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .topo-edge:hover .topo-edge-line {
+            stroke-width: 3.5;
+        }
+
+        .topo-edge.is-selected .topo-edge-line {
+            stroke-width: 4;
+            filter: drop-shadow(0 0 4px rgba(31, 95, 191, 0.4));
+        }
+
+        @keyframes flow-dash {
+            to {
+                stroke-dashoffset: -20;
+            }
+        }
+
+        .topo-edge.is-critical .topo-edge-line {
+            stroke-dasharray: 6 3;
+            animation: flow-dash 1s linear infinite;
+        }
     </style>
 </head>
 
@@ -1067,12 +1226,42 @@
         <!-- Two Columns Layout: Left = Interfaces (wide), Right = Needs Attention (narrow) -->
         <div class="control-board-grid">
 
-            <!-- Left Column: Interfaces -->
+            <!-- Left Column: Interfaces & Landscape Topology -->
             <section class="board-column" aria-labelledby="interfacesColTitle">
                 <div class="column-header">
-                    <h3 id="interfacesColTitle" class="column-title">Monitored interfaces</h3>
-                    <span id="interfacesCount" class="column-count tabular-nums">0</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <h3 id="interfacesColTitle" class="column-title">Monitored interfaces</h3>
+                        <span id="interfacesCount" class="column-count tabular-nums">0</span>
+                    </div>
+                    <!-- View Mode Toggle: Cards vs Topology Map -->
+                    <div class="view-toggle-group" role="tablist" aria-label="Interface landscape view mode">
+                        <button id="viewToggleCards" class="view-toggle-btn is-active" type="button" role="tab" aria-selected="true" title="View interface queue metric cards">Cards</button>
+                        <button id="viewToggleTopology" class="view-toggle-btn" type="button" role="tab" aria-selected="false" title="View integration architecture topology map">Topology map</button>
+                    </div>
                 </div>
+
+                <!-- Active Topology Filter Banner -->
+                <div id="topologyFilterBanner" class="topology-filter-banner" style="display: none;" role="status">
+                    <span id="topologyFilterText" class="topology-filter-text">Filtered by system</span>
+                    <button id="btnResetTopologyFilter" class="btn-quiet" type="button" style="padding: 2px 8px; font-size: 0.75rem;">Clear filter</button>
+                </div>
+
+                <!-- Integration Topology Map Container (Phase 4) -->
+                <div id="topologyMapWrapper" class="topology-wrapper" style="display: none;">
+                    <div class="topology-summary-bar">
+                        <div class="topology-pills-row">
+                            <span id="topoHealthyPill" class="topology-pill is-healthy">5 Healthy</span>
+                            <span id="topoWarningPill" class="topology-pill is-warning" style="display: none;">0 Warning</span>
+                            <span id="topoCriticalPill" class="topology-pill is-critical" style="display: none;">0 Critical</span>
+                        </div>
+                        <span style="font-size: 0.6875rem; color: var(--color-slate);">Click any system or channel to filter operational alerts</span>
+                    </div>
+                    <div id="topologySvgContainer" class="topology-svg-container">
+                        <!-- Dynamic SVG Graph injected safely via DOM API -->
+                    </div>
+                </div>
+
+                <!-- Dynamic Interface Cards Container -->
                 <div id="interfacesContainer" class="board-column">
                     <!-- Dynamic interface cards rendered here safely -->
                 </div>

@@ -23,6 +23,16 @@ service MonitoringService @(requires: 'authenticated-user') {
     @readonly
     entity RunbookEntries as projection on my.RunbookEntries;
 
+    @readonly
+    entity Systems        as projection on my.Systems;
+
+    @readonly
+    entity Connections    as projection on my.Connections;
+
+    // Landscape Topology Graph & Live Health
+    @(requires: 'authenticated-user')
+    function getTopology() returns LargeString;
+
     // External telemetry ingestion endpoint
     @(requires: ['SimulatorAdmin', 'SupportOperator'])
     action ingestTelemetry(
