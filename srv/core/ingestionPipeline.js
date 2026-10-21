@@ -59,14 +59,23 @@ function validateTimestamp(capturedAt) {
  * Core Ingestion Pipeline
  * Persists snapshot, performs differential metric checks, and applies alert deduplication.
  *
- * @param {Object} entities - CDS entities { QueueSnapshots, Alerts }
- * @param {string} targetInterfaceId - Target interface UUID
+ * @param {Object} entities - CDS entities { QueueSnapshots, Alerts, Interfaces }
+ * @param {string|Object} targetInterfaceOrId - Target interface UUID or loaded entity instance
  * @param {Object} snapshotData - Validated metric data
  * @param {string} sourceDescription - Origin context ('Ingested' or scenario name)
  * @returns {Promise<Object>} Execution outcome
  */
-async function processSnapshotAndEvaluate(entities, targetInterfaceId, snapshotData, sourceDescription = 'Ingested') {
-    const { QueueSnapshots, Alerts } = entities;
+async function processSnapshotAndEvaluate(entities, targetInterfaceOrId, snapshotData, sourceDescription = 'Ingested') {
+    const { QueueSnapshots, Alerts, Interfaces } = entities;
+    let targetInterfaceId = targetInterfaceOrId;
+    let targetInterface = null;
+
+    if (typeof targetInterfaceOrId === 'object' && targetInterfaceOrId !== null) {
+        targetInterface = targetInterfaceOrId;
+        targetInterfaceId = targetInterface.ID;
+    } else if (Interfaces) {
+        targetInterface = await SELECT.one.from(Interfaces).where({ ID: targetInterfaceId });
+    }
 
     // 1. Retrieve preceding snapshot for differential analysis (e.g. Rule D: Recovery Stalled)
     const previousSnapshot = await SELECT.one.from(QueueSnapshots)
@@ -76,8 +85,8 @@ async function processSnapshotAndEvaluate(entities, targetInterfaceId, snapshotD
     // 2. Persist snapshot
     await INSERT.into(QueueSnapshots).entries(snapshotData);
 
-    // 3. Evaluate metrics via Detection Engine
-    const detectionResult = evaluateMetrics(snapshotData, previousSnapshot);
+    // 3. Evaluate metrics via Detection Engine using per-interface threshold policies
+    const detectionResult = evaluateMetrics(snapshotData, previousSnapshot, targetInterface);
 
     // 4. Persist or Deduplicate Alert if triggered
     if (detectionResult.triggered) {

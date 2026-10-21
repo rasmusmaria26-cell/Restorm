@@ -295,9 +295,12 @@
 
                 const latestSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null;
                 const latestPending = latestSnapshot ? latestSnapshot.pendingCount : 0;
-                const isOverLimit = latestPending >= GLOBAL_QUEUE_ALERT_LIMIT;
+                const interfaceLimit = (typeof iface.queueGrowthLimit === 'number' && iface.queueGrowthLimit > 0)
+                    ? iface.queueGrowthLimit
+                    : GLOBAL_QUEUE_ALERT_LIMIT;
+                const isOverLimit = latestPending >= interfaceLimit;
 
-                const svgSparkline = createPressureLineSVG(snapshots, GLOBAL_QUEUE_ALERT_LIMIT);
+                const svgSparkline = createPressureLineSVG(snapshots, interfaceLimit);
                 sparklineWrap.appendChild(svgSparkline);
 
                 const pressureSummary = document.createElement('div');
@@ -309,7 +312,7 @@
 
                 const pressureCountLabel = document.createElement('span');
                 pressureCountLabel.className = 'pressure-count-label';
-                pressureCountLabel.textContent = `queued (limit ${GLOBAL_QUEUE_ALERT_LIMIT})`;
+                pressureCountLabel.textContent = `queued (limit ${interfaceLimit})`;
 
                 pressureSummary.append(pressureCount, pressureCountLabel);
                 pressureBlock.append(sparklineWrap, pressureSummary);
@@ -320,7 +323,7 @@
 
                 const metricsSpan = document.createElement('span');
                 if (latestSnapshot) {
-                    metricsSpan.textContent = `${latestSnapshot.retryAttempts || 0} retries • Oldest: ${formatDurationSeconds(latestSnapshot.oldestPendingAgeSeconds)}`;
+                    metricsSpan.textContent = `${latestSnapshot.retryAttempts || 0} retries (limit ${iface.maxRetryThreshold || 100}) • Oldest: ${formatDurationSeconds(latestSnapshot.oldestPendingAgeSeconds)}`;
                 } else {
                     metricsSpan.textContent = 'No queue metrics recorded yet';
                 }

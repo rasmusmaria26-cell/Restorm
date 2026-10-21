@@ -138,8 +138,8 @@ module.exports = class MonitoringService extends cds.ApplicationService {
 
             // 5. Execute core ingestion and evaluation pipeline
             const result = await processSnapshotAndEvaluate(
-                { QueueSnapshots, Alerts },
-                targetInterface.ID,
+                { QueueSnapshots, Alerts, Interfaces },
+                targetInterface,
                 snapshotData,
                 `External Ingestion [${targetInterface.name}]`
             );
@@ -188,13 +188,49 @@ module.exports = class MonitoringService extends cds.ApplicationService {
 
             // 4. Execute core evaluation pipeline
             const result = await processSnapshotAndEvaluate(
-                { QueueSnapshots, Alerts },
-                targetInterface.ID,
+                { QueueSnapshots, Alerts, Interfaces },
+                targetInterface,
                 snapshotData,
                 `Scenario [${scenario || 'NORMAL'}] executed`
             );
 
             return result.message;
+        });
+
+        // Action: Configure per-interface threshold policies (Admin only)
+        this.on('configureThresholds', async (req) => {
+            const data = req.data || {};
+            const { interfaceId } = data;
+
+            if (!interfaceId || typeof interfaceId !== 'string' || interfaceId.length > 36) {
+                return req.reject(400, "Invalid 'interfaceId' format: expected a valid UUID string");
+            }
+
+            const targetInterface = await SELECT.one.from(Interfaces).where({ ID: interfaceId });
+            if (!targetInterface) {
+                return req.reject(404, `Interface with ID '${interfaceId}' does not exist`);
+            }
+
+            const retryCheck = validateIntegerBound(data.maxRetryThreshold, 'maxRetryThreshold', 1, 10000);
+            if (!retryCheck.valid) return req.reject(400, retryCheck.error);
+
+            const queueCheck = validateIntegerBound(data.queueGrowthLimit, 'queueGrowthLimit', 1, 100000);
+            if (!queueCheck.valid) return req.reject(400, queueCheck.error);
+
+            const ageCheck = validateIntegerBound(data.oldMessageAgeLimitSeconds, 'oldMessageAgeLimitSeconds', 10, 2592000);
+            if (!ageCheck.valid) return req.reject(400, ageCheck.error);
+
+            const recoveryCheck = validateIntegerBound(data.recoveryStalledBacklog, 'recoveryStalledBacklog', 1, 100000);
+            if (!recoveryCheck.valid) return req.reject(400, recoveryCheck.error);
+
+            await UPDATE(Interfaces, interfaceId).with({
+                maxRetryThreshold: retryCheck.value,
+                queueGrowthLimit: queueCheck.value,
+                oldMessageAgeLimitSeconds: ageCheck.value,
+                recoveryStalledBacklog: recoveryCheck.value
+            });
+
+            return await SELECT.one.from(Interfaces).where({ ID: interfaceId });
         });
 
         // Administrative Action: Reset database to clean baseline seed

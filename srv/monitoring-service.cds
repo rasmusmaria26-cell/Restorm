@@ -37,6 +37,16 @@ service MonitoringService @(requires: 'authenticated-user') {
     @(requires: ['SimulatorAdmin', 'SupportOperator'])
     action triggerSimulation(scenario: String, interfaceId: UUID) returns String;
 
+    // Administrative threshold configuration (Admin only)
+    @(requires: 'SimulatorAdmin')
+    action configureThresholds(
+        interfaceId               : UUID,
+        maxRetryThreshold         : Integer,
+        queueGrowthLimit          : Integer,
+        oldMessageAgeLimitSeconds : Integer,
+        recoveryStalledBacklog    : Integer
+    ) returns Interfaces;
+
     // Administrative database reset
     @(requires: 'SimulatorAdmin')
     action resetToCleanSeed() returns String;

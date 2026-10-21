@@ -6,13 +6,18 @@ using { cuid, managed } from '@sap/cds/common';
  * 9.1 Monitored Interfaces / Integrations
  */
 entity Interfaces : cuid, managed {
-    name             : String(100);
-    sourceSystem     : String(50);
-    targetSystem     : String(50);
-    active           : Boolean default true;
-    expectedSchedule : String(100);
-    description      : String(255);
-    snapshots        : Composition of many QueueSnapshots on snapshots.interface = $self;
+    name                      : String(100);
+    sourceSystem              : String(50);
+    targetSystem              : String(50);
+    active                    : Boolean default true;
+    expectedSchedule          : String(100);
+    description               : String(255);
+    // Configurable SLA & detection threshold policies (per interface)
+    maxRetryThreshold         : Integer default 100; // Rule A: Excessive retries
+    queueGrowthLimit          : Integer default 200; // Rule B: Backlog growth
+    oldMessageAgeLimitSeconds : Integer default 600; // Rule C: Stale message age SLA (seconds)
+    recoveryStalledBacklog    : Integer default 100; // Rule D: Stalled recovery backlog
+    snapshots                 : Composition of many QueueSnapshots on snapshots.interface = $self;
     alerts           : Association to many Alerts on alerts.interface = $self;
 }
 
