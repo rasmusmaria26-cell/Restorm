@@ -22,12 +22,26 @@ Restorm/
 │   │   └── simulator.js          # Synthetic scenario generator (Normal, Storm, Backlog, Recovery)
 │   └── ai/                       # Advisory Intelligence Layer
 │       └── explanationService.js # Grounded runbook explanation generator
-├── docs/                         # Project Documentation
+├── docs/                         # Project Documentation Suite
+│   ├── README.md                 # Documentation Index & Hub
+│   ├── ARCHITECTURE.md           # System Architecture & Diagrams (C4/Mermaid/ERD)
+│   ├── ROADMAP.md                # Milestone Plan & Delivery Status (M0-M7)
+│   ├── CURRENT_STATUS_ANALYSIS.md# In-depth Gap Analysis & Implementation Audit
+│   ├── DETECTION_RULES_AND_RUNBOOK.md # Thresholds, Rules & Curated Runbook SOPs
 │   └── Retry_Storm_Sentinel_Master_Project_Document.md # Master project blueprint
 ├── sentinel.db                   # Local SQLite Database (gitignored)
 ├── package.json                  # Dependencies & scripts
 └── .gitignore                    # Secrets, node_modules, and DB exclusions
 ```
+
+---
+
+## 📚 Detailed Documentation
+Comprehensive specifications and project analyses are available in the [`docs/`](docs/README.md) directory:
+- 🏛️ **[System Architecture](docs/ARCHITECTURE.md)**: Deep dive into the CAP service, C4/Mermaid diagrams, and ERD.
+- 🗺️ **[Development Roadmap](docs/ROADMAP.md)**: Milestone tracking (M0–M7) and Phase 2 backlog.
+- 📊 **[Current Status & Gap Analysis](docs/CURRENT_STATUS_ANALYSIS.md)**: Detailed audit of what is implemented vs pending.
+- 📏 **[Detection Rules & Runbooks](docs/DETECTION_RULES_AND_RUNBOOK.md)**: Deterministic thresholds, SOPs, and AI guardrails.
 
 ---
 

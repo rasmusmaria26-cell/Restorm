@@ -18,7 +18,7 @@ function generateGroundedExplanation(alert, runbookEntry) {
             runbookEntry ? runbookEntry.symptoms : 'Unspecified queue/retry anomaly.'
         ],
         recommendedChecks: runbookEntry 
-            ? runbookEntry.checks.split('. ').filter(Boolean)
+            ? runbookEntry.checks.split(/(?:\s*\d+\.\s*)/).filter(Boolean)
             : ['Review integration trace logs in SAP Cloud Integration / S/4HANA.'],
         citedRunbookIds: runbookEntry ? [runbookEntry.ID] : [],
         limitations: runbookEntry 

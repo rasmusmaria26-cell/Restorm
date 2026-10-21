@@ -37,6 +37,7 @@ entity Alerts : cuid, managed {
     ruleCode        : String(50); // EXCESSIVE_RETRIES, QUEUE_GROWTH, OLD_MESSAGE_AGE, RECOVERY_STALLED
     severity        : String(20); // Info, Warning, High, Critical
     status          : String(20) default 'Open'; // Open, Acknowledged, Resolved, Closed
+    repeatCount     : Integer default 1; // Number of times incident repeated in current window
     detectedAt      : DateTime;
     windowStart     : DateTime;
     windowEnd       : DateTime;
