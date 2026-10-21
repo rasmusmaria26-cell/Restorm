@@ -712,6 +712,29 @@
             font-size: 0.875rem;
         }
 
+        .ai-provider-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 6px;
+            align-self: flex-start;
+        }
+
+        .ai-provider-badge.is-gemini {
+            background-color: #EEF4FF;
+            color: #1F5FBF;
+            border: 1px solid #BFD7FE;
+        }
+
+        .ai-provider-badge.is-fallback {
+            background-color: var(--color-mist);
+            color: var(--color-slate);
+            border: 1px solid var(--color-divider);
+        }
+
         .drawer-section-title {
             font-family: var(--font-display);
             font-size: 0.875rem;
