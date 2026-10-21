@@ -50,10 +50,14 @@ async function generateGroundedExplanation(alert, runbookEntry = null) {
         ? runbookEntry.checks.split(/(?:\s*\d+\.\s*)/).filter(Boolean)
         : ['Review integration trace logs in SAP Cloud Integration / S/4HANA.'];
 
+    const friendlySummary = runbookEntry 
+        ? `${runbookEntry.title} (${alert.severity} - ${alert.ruleCode}): ${runbookEntry.symptoms} Root-cause analysis and operational mitigation grounded in Curated Runbook [${runbookEntry.ID}].`
+        : `Operational incident detected for rule [${alert.ruleCode}] with severity [${alert.severity}]. Review target endpoint health and retry backpressure.`;
+
     const deterministicFallback = {
         aiAssisted: false,
         provider: 'Deterministic Runbook Grounding (Offline Mode)',
-        summary: `Deterministic alert for rule [${alert.ruleCode}] with severity [${alert.severity}].`,
+        summary: friendlySummary,
         observedFacts: observedMetrics,
         possibleHypotheses: [
             runbookEntry ? runbookEntry.symptoms : 'Unspecified queue/retry anomaly.'
@@ -108,7 +112,64 @@ Respond in valid JSON format matching this schema:
   "evidenceGaps": "Details of what telemetry or server logs are needed to verify the hypothesis"
 }`;
 
-    // Path A: OpenRouter API
+    // Provider 1: Direct Google Gemini API (if configured)
+    if (geminiKey && geminiKey.trim().length > 0) {
+        const geminiModels = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+        for (const model of geminiModels) {
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey.trim())}`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: promptText }] }],
+                        generationConfig: {
+                            responseMimeType: 'application/json',
+                            temperature: 0.2
+                        }
+                    }),
+                    signal: AbortSignal.timeout(15000)
+                });
+
+                if (!response.ok) {
+                    console.warn(`[AI Explainer] Gemini (${model}) returned status ${response.status}. Trying next option...`);
+                    continue;
+                }
+
+                const data = await response.json();
+                const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!candidateText) continue;
+
+                const parsed = JSON.parse(candidateText);
+
+                const summary = typeof parsed.summary === 'string'
+                    ? parsed.summary
+                    : (parsed.summary?.assessment || parsed.summary?.alert || deterministicFallback.summary);
+
+                const possibleHypotheses = normalizeList(parsed.possibleHypotheses, 'hypothesis');
+                const recommendedChecks = normalizeList(parsed.recommendedChecks, 'check');
+                const evidenceGaps = typeof parsed.evidenceGaps === 'string'
+                    ? parsed.evidenceGaps
+                    : (Array.isArray(parsed.evidenceGaps) ? parsed.evidenceGaps.join(' ') : deterministicFallback.evidenceGaps);
+
+                return {
+                    aiAssisted: true,
+                    provider: `Google Gemini (${model})`,
+                    summary,
+                    observedFacts: observedMetrics,
+                    possibleHypotheses: possibleHypotheses.length > 0 ? possibleHypotheses : deterministicFallback.possibleHypotheses,
+                    recommendedChecks: recommendedChecks.length > 0 ? recommendedChecks : deterministicFallback.recommendedChecks,
+                    citedRunbookIds: runbookEntry ? [runbookEntry.ID] : [],
+                    evidenceGaps,
+                    limitations: deterministicFallback.limitations
+                };
+            } catch (err) {
+                console.warn(`[AI Explainer] Gemini (${model}) exception:`, err.message);
+            }
+        }
+    }
+
+    // Provider 2: OpenRouter API (if configured)
     if (openrouterKey && openrouterKey.trim().length > 0) {
         try {
             const modelName = process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3.5-lightning:free';
@@ -139,97 +200,43 @@ Respond in valid JSON format matching this schema:
                 signal: AbortSignal.timeout(20000)
             });
 
-            if (!response.ok) {
+            if (response.ok) {
+                const data = await response.json();
+                const contentText = data?.choices?.[0]?.message?.content;
+                if (contentText) {
+                    const parsed = JSON.parse(contentText);
+
+                    const summary = typeof parsed.summary === 'string'
+                        ? parsed.summary
+                        : (parsed.summary?.assessment || parsed.summary?.alert || deterministicFallback.summary);
+
+                    const possibleHypotheses = normalizeList(parsed.possibleHypotheses, 'hypothesis');
+                    const recommendedChecks = normalizeList(parsed.recommendedChecks, 'check');
+                    const evidenceGaps = typeof parsed.evidenceGaps === 'string'
+                        ? parsed.evidenceGaps
+                        : (Array.isArray(parsed.evidenceGaps) ? parsed.evidenceGaps.join(' ') : deterministicFallback.evidenceGaps);
+
+                    return {
+                        aiAssisted: true,
+                        provider: `OpenRouter (${modelName})`,
+                        summary,
+                        observedFacts: observedMetrics,
+                        possibleHypotheses: possibleHypotheses.length > 0 ? possibleHypotheses : deterministicFallback.possibleHypotheses,
+                        recommendedChecks: recommendedChecks.length > 0 ? recommendedChecks : deterministicFallback.recommendedChecks,
+                        citedRunbookIds: runbookEntry ? [runbookEntry.ID] : [],
+                        evidenceGaps,
+                        limitations: deterministicFallback.limitations
+                    };
+                }
+            } else {
                 console.warn(`[AI Explainer] OpenRouter returned status ${response.status}. Using deterministic fallback.`);
-                return deterministicFallback;
             }
-
-            const data = await response.json();
-            const contentText = data?.choices?.[0]?.message?.content;
-            if (!contentText) return deterministicFallback;
-
-            const parsed = JSON.parse(contentText);
-
-            const summary = typeof parsed.summary === 'string'
-                ? parsed.summary
-                : (parsed.summary?.assessment || parsed.summary?.alert || deterministicFallback.summary);
-
-            const possibleHypotheses = normalizeList(parsed.possibleHypotheses, 'hypothesis');
-            const recommendedChecks = normalizeList(parsed.recommendedChecks, 'check');
-            const evidenceGaps = typeof parsed.evidenceGaps === 'string'
-                ? parsed.evidenceGaps
-                : (Array.isArray(parsed.evidenceGaps) ? parsed.evidenceGaps.join(' ') : deterministicFallback.evidenceGaps);
-
-            return {
-                aiAssisted: true,
-                provider: `OpenRouter (${modelName})`,
-                summary,
-                observedFacts: observedMetrics,
-                possibleHypotheses: possibleHypotheses.length > 0 ? possibleHypotheses : deterministicFallback.possibleHypotheses,
-                recommendedChecks: recommendedChecks.length > 0 ? recommendedChecks : deterministicFallback.recommendedChecks,
-                citedRunbookIds: runbookEntry ? [runbookEntry.ID] : [],
-                evidenceGaps,
-                limitations: deterministicFallback.limitations
-            };
         } catch (err) {
             console.warn('[AI Explainer] Exception calling OpenRouter API:', err.message);
-            return deterministicFallback;
         }
     }
 
-    // Path B: Direct Google Gemini API
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiKey.trim())}`;
-        
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: promptText }] }],
-                generationConfig: {
-                    responseMimeType: 'application/json',
-                    temperature: 0.2
-                }
-            }),
-            signal: AbortSignal.timeout(5000)
-        });
-
-        if (!response.ok) {
-            console.warn(`[AI Explainer] Gemini API returned status ${response.status}. Using deterministic fallback.`);
-            return deterministicFallback;
-        }
-
-        const data = await response.json();
-        const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!candidateText) return deterministicFallback;
-
-        const parsed = JSON.parse(candidateText);
-
-        const summary = typeof parsed.summary === 'string'
-            ? parsed.summary
-            : (parsed.summary?.assessment || parsed.summary?.alert || deterministicFallback.summary);
-
-        const possibleHypotheses = normalizeList(parsed.possibleHypotheses, 'hypothesis');
-        const recommendedChecks = normalizeList(parsed.recommendedChecks, 'check');
-        const evidenceGaps = typeof parsed.evidenceGaps === 'string'
-            ? parsed.evidenceGaps
-            : (Array.isArray(parsed.evidenceGaps) ? parsed.evidenceGaps.join(' ') : deterministicFallback.evidenceGaps);
-
-        return {
-            aiAssisted: true,
-            provider: 'Google Gemini (gemini-2.5-flash)',
-            summary,
-            observedFacts: observedMetrics,
-            possibleHypotheses: possibleHypotheses.length > 0 ? possibleHypotheses : deterministicFallback.possibleHypotheses,
-            recommendedChecks: recommendedChecks.length > 0 ? recommendedChecks : deterministicFallback.recommendedChecks,
-            citedRunbookIds: runbookEntry ? [runbookEntry.ID] : [],
-            evidenceGaps,
-            limitations: deterministicFallback.limitations
-        };
-    } catch (err) {
-        console.warn('[AI Explainer] Exception calling Gemini API:', err.message);
-        return deterministicFallback;
-    }
+    return deterministicFallback;
 }
 
 module.exports = {
