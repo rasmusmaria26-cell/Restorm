@@ -5,23 +5,29 @@
             bob: {
                 title: 'Bob',
                 roleLabel: 'Support operator',
-                badgeText: 'Can acknowledge & simulate',
+                badgeText: 'Can acknowledge, resolve & simulate',
                 canSimulate: true,
-                canAcknowledge: true
+                canAcknowledge: true,
+                canResolve: true,
+                canReset: false
             },
             alice: {
                 title: 'Alice',
                 roleLabel: 'Support viewer',
                 badgeText: 'View-only access',
                 canSimulate: false,
-                canAcknowledge: false
+                canAcknowledge: false,
+                canResolve: false,
+                canReset: false
             },
             admin: {
                 title: 'Admin',
                 roleLabel: 'Simulator admin',
-                badgeText: 'Full prototype access',
+                badgeText: 'Full prototype & admin access',
                 canSimulate: true,
-                canAcknowledge: true
+                canAcknowledge: true,
+                canResolve: true,
+                canReset: true
             }
         };
 
@@ -44,6 +50,8 @@
         let latestInterfaces = [];
         let latestAlerts = [];
         let activeExplainAlertId = null;
+        let isLiveStreamActive = false;
+        let liveStreamTimer = null;
 
         // Basic Authentication Header
         function getAuthHeader() {
@@ -428,12 +436,13 @@
             for (const group of incidentGroups) {
                 const alert = group.primaryAlert;
                 const isAck = alert.status === 'Acknowledged';
+                const isResolved = alert.status === 'Resolved';
                 const isCritical = alert.severity === 'Critical';
                 const isHigh = alert.severity === 'High';
 
                 const card = document.createElement('article');
                 card.className = 'alert-card' +
-                    (isAck ? ' is-acknowledged' : '') +
+                    (isAck || isResolved ? ' is-acknowledged' : '') +
                     (isCritical ? ' is-critical' : isHigh ? ' is-high' : '');
 
                 // Header
@@ -492,7 +501,12 @@
                 ongoingTag.textContent = `Ongoing since ${startTime} • Seen ${occurrences} ${occurrences === 1 ? 'time' : 'times'}`;
                 metaRow.appendChild(ongoingTag);
 
-                if (isAck && alert.acknowledgedBy) {
+                if (isResolved) {
+                    const resolvedStamp = document.createElement('span');
+                    resolvedStamp.className = 'resolved-tag';
+                    resolvedStamp.textContent = `✓ Resolved by ${alert.resolvedBy || 'Operator'}${alert.resolvedAt ? ' at ' + formatShortTime(alert.resolvedAt) : ''}`;
+                    metaRow.appendChild(resolvedStamp);
+                } else if (isAck && alert.acknowledgedBy) {
                     const ackStamp = document.createElement('span');
                     ackStamp.className = 'ack-stamp';
                     ackStamp.textContent = `✓ Acknowledged by ${alert.acknowledgedBy} at ${formatShortTime(alert.acknowledgedAt)}`;
@@ -503,14 +517,28 @@
                 const actionsRow = document.createElement('div');
                 actionsRow.className = 'alert-actions-row';
 
-                // Acknowledge Button
-                if (!isAck) {
+                const userPerms = USER_PERMISSIONS[currentUsername] || { canAcknowledge: false, canResolve: false };
+
+                // Acknowledge Button (if Open)
+                if (alert.status === 'Open') {
                     const btnAck = document.createElement('button');
                     btnAck.className = 'btn-harbor';
                     btnAck.type = 'button';
                     btnAck.textContent = 'Acknowledge';
+                    btnAck.disabled = !userPerms.canAcknowledge;
+                    btnAck.title = userPerms.canAcknowledge ? 'Acknowledge this alert' : 'Only Support Operators can acknowledge';
                     btnAck.addEventListener('click', () => handleAcknowledgeAlert(alert.ID));
                     actionsRow.appendChild(btnAck);
+                } else if (alert.status === 'Acknowledged') {
+                    // Resolve Button (if Acknowledged)
+                    const btnResolve = document.createElement('button');
+                    btnResolve.className = 'btn-healthy';
+                    btnResolve.type = 'button';
+                    btnResolve.textContent = 'Resolve incident';
+                    btnResolve.disabled = !userPerms.canResolve;
+                    btnResolve.title = userPerms.canResolve ? 'Mark incident as resolved' : 'Only Support Operators can resolve';
+                    btnResolve.addEventListener('click', () => handleResolveAlert(alert.ID));
+                    actionsRow.appendChild(btnResolve);
                 }
 
                 // Explain Button
@@ -614,6 +642,14 @@
         function renderExplainContent(explanation) {
             const body = document.getElementById('drawerBody');
             body.replaceChildren();
+
+            // 0. AI Provider Badge
+            const providerBadge = document.createElement('div');
+            providerBadge.className = explanation.aiAssisted ? 'ai-provider-badge is-gemini' : 'ai-provider-badge is-fallback';
+            providerBadge.textContent = explanation.aiAssisted 
+                ? `✨ AI-Assisted Advisory (${explanation.provider || 'Google Gemini'}) • Grounded in Curated Runbook`
+                : `📘 Grounded Runbook Advisory (${explanation.provider || 'Offline Mode'})`;
+            body.appendChild(providerBadge);
 
             // 1. Summary
             const secSummary = document.createElement('div');
@@ -766,6 +802,115 @@
             }
         }
 
+        // Actions: Resolve Incident Alert
+        async function handleResolveAlert(alertId) {
+            const user = USER_PERMISSIONS[currentUsername] || { title: currentUsername, canResolve: false };
+            const feedback = document.getElementById('scenarioFeedback');
+
+            if (!user.canResolve) {
+                feedback.className = 'scenario-feedback-bar has-error';
+                feedback.textContent = `${user.title} has view-only permissions. Switch to Bob or Admin to resolve incidents.`;
+                return;
+            }
+
+            try {
+                await fetchJSON(`/odata/v4/monitoring/Alerts(${encodeURIComponent(alertId)})/MonitoringService.resolveAlert`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ resolvedBy: `${user.title} (${user.roleLabel})` })
+                });
+
+                feedback.className = 'scenario-feedback-bar has-success';
+                feedback.textContent = `Incident resolved by ${user.title}.`;
+                await refreshData();
+            } catch (err) {
+                feedback.className = 'scenario-feedback-bar has-error';
+                feedback.textContent = getFriendlyErrorMessage(err, 'resolve');
+            }
+        }
+
+        // Administrative Action: Reset Database to Clean Baseline
+        async function handleResetDatabase() {
+            const user = USER_PERMISSIONS[currentUsername] || { title: currentUsername, canReset: false };
+            const feedback = document.getElementById('scenarioFeedback');
+
+            if (!user.canReset) {
+                feedback.className = 'scenario-feedback-bar has-error';
+                feedback.textContent = `${user.title} cannot reset baseline. Switch to Admin (Simulator Admin) to perform database reset.`;
+                return;
+            }
+
+            try {
+                feedback.className = 'scenario-feedback-bar';
+                feedback.textContent = 'Resetting queues and alerts to pristine factory baseline...';
+
+                const result = await fetchJSON('/odata/v4/monitoring/resetToCleanSeed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+
+                feedback.className = 'scenario-feedback-bar has-success';
+                feedback.textContent = result.value || 'Database restored to clean baseline.';
+                await refreshData();
+            } catch (err) {
+                feedback.className = 'scenario-feedback-bar has-error';
+                feedback.textContent = getFriendlyErrorMessage(err, 'reset');
+            }
+        }
+
+        // Live NOC Auto-Poll Stream
+        function toggleLiveStream() {
+            isLiveStreamActive = !isLiveStreamActive;
+            const btn = document.getElementById('liveStreamToggle');
+            const label = document.getElementById('liveStreamLabel');
+
+            if (isLiveStreamActive) {
+                if (btn) {
+                    btn.classList.add('is-active');
+                    btn.setAttribute('aria-pressed', 'true');
+                }
+                if (label) label.textContent = 'Live stream: ON';
+                startLiveStream();
+            } else {
+                if (btn) {
+                    btn.classList.remove('is-active');
+                    btn.setAttribute('aria-pressed', 'false');
+                }
+                if (label) label.textContent = 'Live stream: OFF';
+                stopLiveStream();
+            }
+        }
+
+        function startLiveStream() {
+            stopLiveStream();
+            const feedback = document.getElementById('scenarioFeedback');
+            if (feedback) {
+                feedback.className = 'scenario-feedback-bar has-success';
+                feedback.textContent = 'Live NOC stream active. Telemetry polling every 4 seconds.';
+            }
+
+            liveStreamTimer = setInterval(async () => {
+                if (!isLiveStreamActive) return;
+                try {
+                    await refreshData();
+                } catch (e) {
+                    console.warn('[Live Stream] Stream poll error:', e);
+                }
+            }, 4000);
+        }
+
+        function stopLiveStream() {
+            if (liveStreamTimer) {
+                clearInterval(liveStreamTimer);
+                liveStreamTimer = null;
+            }
+            const feedback = document.getElementById('scenarioFeedback');
+            if (feedback && feedback.textContent.includes('Live NOC stream active')) {
+                feedback.textContent = '';
+            }
+        }
+
         // Actions: Trigger Simulation Scenario
         async function handleTriggerSimulation(scenario) {
             const feedback = document.getElementById('scenarioFeedback');
@@ -829,6 +974,7 @@
 
             const hint = document.getElementById('scenariosRoleHint');
             const simButtons = document.querySelectorAll('.sim-btn');
+            const resetBtn = document.getElementById('btnResetSeed');
 
             if (!user.canSimulate) {
                 if (hint) {
@@ -844,11 +990,27 @@
                 simButtons.forEach(btn => btn.removeAttribute('disabled'));
             }
 
+            if (resetBtn) {
+                if (user.canReset) {
+                    resetBtn.removeAttribute('disabled');
+                    resetBtn.title = 'Reset database queues and clear alerts to clean starting baseline';
+                } else {
+                    resetBtn.setAttribute('disabled', 'true');
+                    resetBtn.title = 'Only Simulator Admin (Admin) can reset database to baseline';
+                }
+            }
+
             refreshData();
         }
 
         // Setup Event Listeners
         function initializeEvents() {
+            // Live NOC Stream Toggle
+            const liveToggle = document.getElementById('liveStreamToggle');
+            if (liveToggle) {
+                liveToggle.addEventListener('click', toggleLiveStream);
+            }
+
             // User role switcher
             const userSelect = document.getElementById('userSelect');
             if (userSelect) {
@@ -868,6 +1030,12 @@
                     if (scenario) handleTriggerSimulation(scenario);
                 });
             });
+
+            // Database Reset Button
+            const resetBtn = document.getElementById('btnResetSeed');
+            if (resetBtn) {
+                resetBtn.addEventListener('click', handleResetDatabase);
+            }
 
             // Explain Drawer close events
             const drawer = document.getElementById('explainDrawer');

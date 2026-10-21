@@ -286,4 +286,113 @@ describe('MonitoringService - Integration, Authorization & Deduplication Tests',
         assert.ok(alert, 'Expected OLD_MESSAGE_AGE alert for PERSISTENT_BACKLOG');
         assert.equal(alert.severity, 'High');
     });
+
+    it('Lifecycle Action: Operator (bob) can resolve an acknowledged alert', async () => {
+        const bobTx = srv.tx({ 
+            user: new cds.User({ id: 'bob', roles: ['SupportOperator', 'SupportViewer'] }) 
+        });
+
+        // Find or create an alert and acknowledge it first
+        const openAlerts = await bobTx.run(SELECT.from(srv.entities.Alerts).where({ status: 'Acknowledged' }));
+        assert.ok(openAlerts.length > 0, 'Must have an acknowledged alert to resolve');
+        const targetAlert = openAlerts[0];
+
+        const resolveRes = await bobTx.send({
+            event: 'resolveAlert',
+            entity: 'Alerts',
+            params: [{ ID: targetAlert.ID }],
+            data: { resolvedBy: 'Operator Bob' }
+        });
+
+        assert.equal(resolveRes.status, 'Resolved');
+        assert.equal(resolveRes.resolvedBy, 'Operator Bob');
+        assert.ok(resolveRes.resolvedAt);
+    });
+
+    it('Lifecycle Protection: Resolving an already resolved alert returns 409', async () => {
+        const bobTx = srv.tx({ 
+            user: new cds.User({ id: 'bob', roles: ['SupportOperator', 'SupportViewer'] }) 
+        });
+
+        const resolvedAlerts = await bobTx.run(SELECT.from(srv.entities.Alerts).where({ status: 'Resolved' }));
+        assert.ok(resolvedAlerts.length > 0);
+        const targetAlert = resolvedAlerts[0];
+
+        await assert.rejects(
+            async () => {
+                await bobTx.send({
+                    event: 'resolveAlert',
+                    entity: 'Alerts',
+                    params: [{ ID: targetAlert.ID }],
+                    data: { resolvedBy: 'Operator Bob' }
+                });
+            },
+            (err) => {
+                assert.equal(err.code || err.status, 409);
+                assert.match(err.message, /already in status 'Resolved'/);
+                return true;
+            }
+        );
+    });
+
+    it('Authorization Check: Viewer (alice) is forbidden from resolving an alert (403)', async () => {
+        const aliceTx = srv.tx({ 
+            user: new cds.User({ id: 'alice', roles: ['SupportViewer'] }) 
+        });
+
+        const allAlerts = await aliceTx.run(SELECT.from(srv.entities.Alerts));
+        assert.ok(allAlerts.length > 0);
+
+        await assert.rejects(
+            async () => {
+                await aliceTx.send({
+                    event: 'resolveAlert',
+                    entity: 'Alerts',
+                    params: [{ ID: allAlerts[0].ID }],
+                    data: { resolvedBy: 'Alice' }
+                });
+            },
+            (err) => {
+                const code = err.code || err.status;
+                assert.equal(code, 403);
+                return true;
+            }
+        );
+    });
+
+    it('Administrative Action: Admin can reset database to clean baseline seed', async () => {
+        const adminTx = srv.tx({ 
+            user: new cds.User({ id: 'admin', roles: ['SupportViewer', 'SupportOperator', 'SimulatorAdmin'] }) 
+        });
+
+        const resetRes = await adminTx.send('resetToCleanSeed');
+        assert.match(resetRes, /Database reset to clean baseline/);
+
+        // Verify all alerts are cleared
+        const alertsAfter = await adminTx.run(SELECT.from(srv.entities.Alerts));
+        assert.equal(alertsAfter.length, 0);
+
+        // Verify interfaces are initialized with baseline snapshots
+        const snapshotsAfter = await adminTx.run(SELECT.from(srv.entities.QueueSnapshots));
+        assert.ok(snapshotsAfter.length >= 3);
+        assert.equal(snapshotsAfter[0].pendingCount, 8);
+        assert.equal(snapshotsAfter[0].failedCount, 0);
+    });
+
+    it('Authorization Check: Operator (bob) cannot invoke resetToCleanSeed (403)', async () => {
+        const bobTx = srv.tx({ 
+            user: new cds.User({ id: 'bob', roles: ['SupportOperator', 'SupportViewer'] }) 
+        });
+
+        await assert.rejects(
+            async () => {
+                await bobTx.send('resetToCleanSeed');
+            },
+            (err) => {
+                const code = err.code || err.status;
+                assert.equal(code, 403);
+                return true;
+            }
+        );
+    });
 });

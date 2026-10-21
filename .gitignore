@@ -17,6 +17,7 @@ default-*.json
 # Secrets (NEVER commit)
 .env
 .env.*
+!.env.example
 
 # MTA build
 mta_archives/

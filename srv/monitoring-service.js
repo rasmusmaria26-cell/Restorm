@@ -38,6 +38,33 @@ module.exports = class MonitoringService extends cds.ApplicationService {
             return await SELECT.one.from(Alerts).where({ ID: alertId });
         });
 
+        // Action: Resolve an active or acknowledged alert
+        this.on('resolveAlert', 'Alerts', async (req) => {
+            const alertId = req.params[0]?.ID || req.params[0];
+            if (!alertId || typeof alertId !== 'string') {
+                return req.reject(400, 'Invalid alert ID');
+            }
+
+            let resolvedBy = req.data?.resolvedBy || req.user?.id || 'Operator';
+            if (typeof resolvedBy !== 'string') resolvedBy = 'Operator';
+            resolvedBy = resolvedBy.trim().replace(/[\r\n\t]/g, ' ').substring(0, 100);
+
+            const alert = await SELECT.one.from(Alerts).where({ ID: alertId });
+            if (!alert) return req.reject(404, `Alert ${alertId} not found`);
+
+            if (alert.status === 'Resolved' || alert.status === 'Closed') {
+                return req.reject(409, `Alert ${alertId} is already in status '${alert.status}'.`);
+            }
+
+            await UPDATE(Alerts, alertId).with({
+                status: 'Resolved',
+                resolvedAt: new Date().toISOString(),
+                resolvedBy: resolvedBy
+            });
+
+            return await SELECT.one.from(Alerts).where({ ID: alertId });
+        });
+
         // Action: Grounded Explanation
         this.on('explain', 'Alerts', async (req) => {
             const alertId = req.params[0]?.ID || req.params[0];
@@ -49,7 +76,7 @@ module.exports = class MonitoringService extends cds.ApplicationService {
             if (!alert) return req.reject(404, `Alert not found`);
 
             const runbook = await SELECT.one.from(RunbookEntries).where({ ruleCode: alert.ruleCode });
-            const explanation = generateGroundedExplanation(alert, runbook);
+            const explanation = await generateGroundedExplanation(alert, runbook);
             const explanationStr = JSON.stringify(explanation, null, 2);
 
             await UPDATE(Alerts, alertId).with({ aiExplanation: explanationStr });
@@ -142,6 +169,31 @@ module.exports = class MonitoringService extends cds.ApplicationService {
             }
 
             return `Scenario [${scenario || 'NORMAL'}] executed: Snapshot saved. System operating normally.`;
+        });
+
+        // Administrative Action: Reset database to clean baseline seed
+        this.on('resetToCleanSeed', async (req) => {
+            // Delete all generated alerts and runtime snapshots
+            await DELETE.from(Alerts);
+            await DELETE.from(QueueSnapshots);
+
+            const allInterfaces = await SELECT.from(Interfaces);
+            const now = new Date();
+
+            // Re-initialize baseline queue snapshot for each interface
+            for (const iface of allInterfaces) {
+                await INSERT.into(QueueSnapshots).entries({
+                    interface_ID: iface.ID,
+                    capturedAt: now.toISOString(),
+                    pendingCount: 8,
+                    failedCount: 0,
+                    retryAttempts: 1,
+                    successCount: 140,
+                    oldestPendingAgeSeconds: 15
+                });
+            }
+
+            return `Database reset to clean baseline. ${allInterfaces.length} queues initialized with 0 active alerts.`;
         });
 
         await super.init();

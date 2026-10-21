@@ -45,6 +45,8 @@ entity Alerts : cuid, managed {
     summary         : String(255);
     acknowledgedAt  : DateTime;
     acknowledgedBy  : String(100);
+    resolvedAt      : DateTime;
+    resolvedBy      : String(100);
     aiExplanation   : LargeString;
 }
 

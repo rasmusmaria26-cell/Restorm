@@ -883,6 +883,138 @@
         .scenario-feedback-bar.has-success {
             color: var(--color-healthy-text);
         }
+
+        /* Live NOC Stream Toggle Button */
+        .live-stream-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 5px 12px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background-color: var(--color-card-bg);
+            border: 1px solid var(--color-divider);
+            color: var(--color-slate);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .live-stream-btn:hover {
+            border-color: var(--color-slate);
+            background-color: var(--color-mist);
+        }
+
+        .live-stream-btn.is-active {
+            background-color: #E6F4EA;
+            border-color: #CEEAD6;
+            color: #137333;
+        }
+
+        .live-indicator-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--color-slate);
+            transition: background-color 0.2s ease;
+        }
+
+        .live-stream-btn.is-active .live-indicator-dot {
+            background-color: #1E8E3E;
+            animation: live-pulse 1.8s infinite ease-in-out;
+        }
+
+        @keyframes live-pulse {
+            0% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(30, 142, 62, 0.7);
+            }
+            70% {
+                transform: scale(1.15);
+                box-shadow: 0 0 0 6px rgba(30, 142, 62, 0);
+            }
+            100% {
+                transform: scale(0.95);
+                box-shadow: 0 0 0 0 rgba(30, 142, 62, 0);
+            }
+        }
+
+        /* Resolve Action Button */
+        .btn-healthy {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background-color: var(--color-healthy);
+            color: #FFFFFF;
+            font-family: var(--font-body);
+            font-size: 0.8125rem;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: background-color 0.15s ease, opacity 0.15s ease;
+        }
+
+        .btn-healthy:hover:not(:disabled) {
+            background-color: #247357;
+        }
+
+        .btn-healthy:disabled {
+            background-color: var(--color-disabled-bg);
+            color: var(--color-disabled-text);
+            cursor: not-allowed;
+            border-color: var(--color-divider);
+        }
+
+        /* Reset Button */
+        .btn-scenario.btn-reset {
+            margin-left: auto;
+            border-color: #E0B3B0;
+            color: #8C2018;
+            background-color: #FFF7F6;
+        }
+
+        .btn-scenario.btn-reset:hover:not(:disabled) {
+            background-color: #FCE8E6;
+            border-color: var(--color-critical);
+        }
+
+        /* AI Provider Badge in Drawer */
+        .ai-provider-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            border: 1px solid transparent;
+        }
+
+        .ai-provider-badge.is-gemini {
+            background-color: #E8F0FE;
+            color: #1967D2;
+            border-color: #D2E3FC;
+        }
+
+        .ai-provider-badge.is-fallback {
+            background-color: #F1F3F4;
+            color: var(--color-slate);
+            border-color: var(--color-divider);
+        }
+
+        /* Resolved Stamp */
+        .resolved-tag {
+            font-size: 0.6875rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background-color: #E6F4EA;
+            color: #137333;
+            border: 1px solid #CEEAD6;
+        }
     </style>
 </head>
 
@@ -895,6 +1027,11 @@
             <p class="brand-subtitle">Simulated integration backlog and retry monitor</p>
         </div>
         <div class="top-bar-controls">
+            <!-- Live NOC Auto-Simulation Toggle -->
+            <button id="liveStreamToggle" class="live-stream-btn" type="button" aria-pressed="false" title="Toggle automatic live simulation stream">
+                <span class="live-indicator-dot"></span>
+                <span id="liveStreamLabel">Live stream: OFF</span>
+            </button>
             <span class="simulated-pill">
                 <span class="simulated-dot"></span>
                 Simulated data
@@ -973,6 +1110,7 @@
                 <button class="btn-scenario sim-btn" type="button" data-scenario="RECOVERY">Recovery</button>
                 <button class="btn-scenario sim-btn" type="button" data-scenario="RECOVERY_STALLED">Stalled
                     recovery</button>
+                <button id="btnResetSeed" class="btn-scenario btn-reset" type="button" title="Reset all queues and alerts to clean factory baseline">Reset to baseline</button>
             </div>
             <div id="scenarioFeedback" class="scenario-feedback-bar" aria-live="polite"></div>
         </footer>

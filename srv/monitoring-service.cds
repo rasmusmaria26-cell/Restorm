@@ -12,6 +12,9 @@ service MonitoringService @(requires: 'authenticated-user') {
         @(restrict: [{ grant: 'acknowledge', to: 'SupportOperator' }])
         action acknowledge(acknowledgedBy: String) returns Alerts;
 
+        @(restrict: [{ grant: 'resolveAlert', to: 'SupportOperator' }])
+        action resolveAlert(resolvedBy: String) returns Alerts;
+
         action explain() returns LargeString;
     };
 
@@ -21,4 +24,8 @@ service MonitoringService @(requires: 'authenticated-user') {
     // Simulation trigger endpoint
     @(requires: ['SimulatorAdmin', 'SupportOperator'])
     action triggerSimulation(scenario: String, interfaceId: UUID) returns String;
+
+    // Administrative database reset
+    @(requires: 'SimulatorAdmin')
+    action resetToCleanSeed() returns String;
 }
