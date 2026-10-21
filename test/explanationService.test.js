@@ -99,21 +99,26 @@ describe('AI Grounded Explanation Service', () => {
 
     it('Robustness: Gracefully handles offline or invalid OPENROUTER_API_KEY with deterministic fallback', async () => {
         const oldKey = process.env.OPENROUTER_API_KEY;
+        const oldGemini = process.env.GEMINI_API_KEY;
         process.env.OPENROUTER_API_KEY = 'sk-or-test-invalid-key-that-fails';
+        delete process.env.GEMINI_API_KEY;
 
-        const mockAlert = {
-            ID: 'alert-test',
-            ruleCode: 'EXCESSIVE_RETRIES',
-            severity: 'Critical',
-            observedMetrics: '{"pendingCount": 100}'
-        };
+        try {
+            const mockAlert = {
+                ID: 'alert-test',
+                ruleCode: 'EXCESSIVE_RETRIES',
+                severity: 'Critical',
+                observedMetrics: '{"pendingCount": 100}'
+            };
 
-        const explanation = await generateGroundedExplanation(mockAlert, null);
-        assert.equal(explanation.aiAssisted, false);
-        assert.ok(explanation.provider.includes('Deterministic'));
-
-        if (oldKey !== undefined) process.env.OPENROUTER_API_KEY = oldKey;
-        else delete process.env.OPENROUTER_API_KEY;
+            const explanation = await generateGroundedExplanation(mockAlert, null);
+            assert.equal(explanation.aiAssisted, false);
+            assert.ok(explanation.provider.includes('Deterministic'));
+        } finally {
+            if (oldKey !== undefined) process.env.OPENROUTER_API_KEY = oldKey;
+            else delete process.env.OPENROUTER_API_KEY;
+            if (oldGemini !== undefined) process.env.GEMINI_API_KEY = oldGemini;
+        }
     });
 
     it('Live AI Integration: Resolves grounded explanation when valid OPENROUTER_API_KEY is present', async () => {
@@ -140,7 +145,7 @@ describe('AI Grounded Explanation Service', () => {
 
         const explanation = await generateGroundedExplanation(mockAlert, mockRunbook);
         if (explanation.aiAssisted) {
-            assert.ok(explanation.provider.includes('OpenRouter'));
+            assert.ok(explanation.provider.includes('OpenRouter') || explanation.provider.includes('Gemini'));
             assert.ok(explanation.summary.length > 10);
             assert.ok(explanation.possibleHypotheses.length > 0);
             assert.ok(explanation.recommendedChecks.length > 0);

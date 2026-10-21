@@ -114,7 +114,7 @@ Respond in valid JSON format matching this schema:
 
     // Provider 1: Direct Google Gemini API (if configured)
     if (geminiKey && geminiKey.trim().length > 0) {
-        const geminiModels = ['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+        const geminiModels = ['gemini-flash-latest', 'gemini-3.5-flash'];
         for (const model of geminiModels) {
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey.trim())}`;
@@ -128,7 +128,7 @@ Respond in valid JSON format matching this schema:
                             temperature: 0.2
                         }
                     }),
-                    signal: AbortSignal.timeout(15000)
+                    signal: AbortSignal.timeout(6000)
                 });
 
                 if (!response.ok) {
