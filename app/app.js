@@ -279,6 +279,10 @@
                 selectedTopologyFilter = null;
             } else {
                 selectedTopologyFilter = { type: 'edge', interfaceId: edge.interfaceId, name: edge.name };
+                const simSelect = document.getElementById('simulationInterfaceSelect');
+                if (simSelect && edge.interfaceId) {
+                    simSelect.value = edge.interfaceId;
+                }
             }
             updateTopologyFilterBanner();
             if (latestTopology) renderTopologySvg(latestTopology);
@@ -1323,18 +1327,42 @@
                 return;
             }
 
+            const interfaceSelect = document.getElementById('simulationInterfaceSelect');
+            const selectedInterfaceId = interfaceSelect ? interfaceSelect.value : 'ALL';
+
             feedback.className = 'scenario-feedback-bar';
-            feedback.textContent = `Injecting scenario [${scenario}]...`;
 
             try {
-                const res = await fetchJSON('/odata/v4/monitoring/triggerSimulation', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ scenario: scenario })
-                });
+                if (selectedInterfaceId === 'ALL') {
+                    feedback.textContent = `Injecting scenario [${scenario}] across all monitored channels...`;
+                    const targets = (latestInterfaces && latestInterfaces.length > 0)
+                        ? latestInterfaces
+                        : [{ ID: '11111111-1111-1111-1111-111111111111', name: 'Order Inbound' }];
 
-                feedback.className = 'scenario-feedback-bar has-success';
-                feedback.textContent = res.value || 'Simulation completed and queue snapshot recorded.';
+                    const promises = targets.map(iface => fetchJSON('/odata/v4/monitoring/triggerSimulation', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ scenario: scenario, interfaceId: iface.ID })
+                    }));
+
+                    await Promise.all(promises);
+                    feedback.className = 'scenario-feedback-bar has-success';
+                    feedback.textContent = `Injected [${scenario}] across all ${targets.length} interfaces in landscape.`;
+                } else {
+                    const targetIface = (latestInterfaces || []).find(i => i.ID === selectedInterfaceId);
+                    const displayName = targetIface ? targetIface.name : selectedInterfaceId;
+                    feedback.textContent = `Injecting scenario [${scenario}] on [${displayName}]...`;
+
+                    const res = await fetchJSON('/odata/v4/monitoring/triggerSimulation', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ scenario: scenario, interfaceId: selectedInterfaceId })
+                    });
+
+                    feedback.className = 'scenario-feedback-bar has-success';
+                    feedback.textContent = res.value || `Simulation [${scenario}] completed for [${displayName}].`;
+                }
+
                 await refreshData();
             } catch (err) {
                 feedback.className = 'scenario-feedback-bar has-error';
@@ -1370,11 +1398,37 @@
                 }
                 renderInterfaces(latestInterfaces);
                 renderAlerts(getFilteredAlerts(latestAlerts), latestInterfaces);
+                syncSimulationInterfaceSelect();
             } catch (err) {
                 const headlineTitle = document.getElementById('headlineTitle');
                 const headlineSubtitle = document.getElementById('headlineSubtitle');
                 if (headlineTitle) headlineTitle.textContent = 'Could not refresh monitoring data';
                 if (headlineSubtitle) headlineSubtitle.textContent = getFriendlyErrorMessage(err, 'read');
+            }
+        }
+
+        // Keep Interface Target Selector in simulation footer synced
+        function syncSimulationInterfaceSelect() {
+            const select = document.getElementById('simulationInterfaceSelect');
+            if (!select || !latestInterfaces || latestInterfaces.length === 0) return;
+
+            const previousVal = select.value;
+            select.replaceChildren();
+
+            const allOpt = document.createElement('option');
+            allOpt.value = 'ALL';
+            allOpt.textContent = `⚡ All Interfaces (${latestInterfaces.length} channels simultaneously)`;
+            select.appendChild(allOpt);
+
+            for (const iface of latestInterfaces) {
+                const opt = document.createElement('option');
+                opt.value = iface.ID;
+                opt.textContent = `${iface.name} (${iface.sourceSystem} → ${iface.targetSystem})`;
+                select.appendChild(opt);
+            }
+
+            if (previousVal && Array.from(select.options).some(o => o.value === previousVal)) {
+                select.value = previousVal;
             }
         }
 
