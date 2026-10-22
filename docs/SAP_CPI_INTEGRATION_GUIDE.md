@@ -44,7 +44,7 @@ sequenceDiagram
 ### Request Payload Schema
 ```json
 {
-  "interfaceId": "b1000000-0000-0000-0000-000000000001",
+  "interfaceId": "11111111-1111-1111-1111-111111111111",
   "capturedAt": "2026-10-22T13:30:00.000Z",
   "pendingCount": 180,
   "failedCount": 42,
@@ -122,7 +122,7 @@ curl -X POST http://localhost:4004/odata/v4/monitoring/ingestTelemetry \
   -u bob: \
   -H "Content-Type: application/json" \
   -d '{
-    "interfaceId": "b1000000-0000-0000-0000-000000000001",
+    "interfaceId": "11111111-1111-1111-1111-111111111111",
     "capturedAt": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'",
     "pendingCount": 350,
     "failedCount": 140,

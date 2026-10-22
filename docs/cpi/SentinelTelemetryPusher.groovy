@@ -44,7 +44,7 @@ def Message processData(Message message) {
 
         // Target Interface UUID in Retry Storm Sentinel
         // Configurable via iFlow Externalized Parameter (e.g. 'SENTINEL_INTERFACE_ID')
-        String interfaceId = props.get("SENTINEL_INTERFACE_ID") ?: headers.get("SentinelInterfaceId") ?: "b1000000-0000-0000-0000-000000000001"
+        String interfaceId = props.get("SENTINEL_INTERFACE_ID") ?: headers.get("SentinelInterfaceId") ?: "11111111-1111-1111-1111-111111111111"
 
         // Sentinel Service URL (e.g., https://<btp-app>.cfapps.eu10.hana.ondemand.com/odata/v4/monitoring/ingestTelemetry)
         String sentinelEndpoint = props.get("SENTINEL_ENDPOINT_URL") ?: headers.get("SentinelEndpointUrl") ?: "http://localhost:4004/odata/v4/monitoring/ingestTelemetry"
