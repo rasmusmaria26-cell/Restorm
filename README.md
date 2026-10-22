@@ -134,24 +134,31 @@ curl -X GET http://localhost:4004/odata/v4/monitoring/getTopology() \
   -u alice:alice
 ```
 
+### 5. Connect SAP Cloud Integration (CPI / Integration Suite)
+Embed the zero-dependency Groovy script in your iFlow Exception Subprocess:
+- 📖 [Complete SAP CPI Integration Guide](docs/SAP_CPI_INTEGRATION_GUIDE.md)
+- 📜 [Reusable Groovy Pusher Script](docs/cpi/SentinelTelemetryPusher.groovy)
+- 🧩 [Exception Subprocess BPMN Template](docs/cpi/iFlow_Exception_Subprocess_Template.xml)
+
 ---
 
 ## 🧪 Testing & Verification
 
-Run the comprehensive 59-test suite:
+Run the comprehensive 63-test suite:
 ```bash
 npm test
 ```
 
 ### Test Suites:
-1. `test/detectionEngine.test.js` — Pure deterministic rule evaluation & edge cases
-2. `test/explanationService.test.js` — AI runbook grounding, fallback robustness & sanitization
-3. `test/ingestion.test.js` — External telemetry validation, clock-skew & deduplication
-4. `test/monitoring-service.test.js` — OData authorization, incident lifecycle & audit trail
-5. `test/reportExport.test.js` — Postmortem export formatting (Markdown & JSON)
-6. `test/simulator.test.js` — Prototype safety, scenario generation & immutability
-7. `test/thresholds.test.js` — Admin policy governance & dynamic sensitivity
-8. `test/topology.test.js` — Landscape systems, connections & reactive health propagation
+1. `test/cpiConnectorMock.test.js` — SAP Cloud Integration (CPI) telemetry & retry cascade simulation
+2. `test/detectionEngine.test.js` — Pure deterministic rule evaluation & edge cases
+3. `test/explanationService.test.js` — AI runbook grounding, fallback robustness & sanitization
+4. `test/ingestion.test.js` — External telemetry validation, clock-skew & deduplication
+5. `test/monitoring-service.test.js` — OData authorization, incident lifecycle & audit trail
+6. `test/reportExport.test.js` — Postmortem export formatting (Markdown & JSON)
+7. `test/simulator.test.js` — Prototype safety, scenario generation & immutability
+8. `test/thresholds.test.js` — Admin policy governance & dynamic sensitivity
+9. `test/topology.test.js` — Landscape systems, connections & reactive health propagation
 
 ---
 

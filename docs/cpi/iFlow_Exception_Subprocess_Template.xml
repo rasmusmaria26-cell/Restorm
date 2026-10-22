@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ =========================================================================================
+ SAP Cloud Integration (CPI) — Exception Subprocess Template for Retry Storm Sentinel
+ Standard BPMN 2.0 Fragment for SAP Integration Suite / Cloud Integration
+ =========================================================================================
+-->
+<bpmn2:definitions xmlns:bpmn2="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                   xmlns:ifl="http://sap.com/xi/ifl"
+                   id="Definitions_SentinelAdapter"
+                   targetNamespace="http://sap.com/xi/ifl">
+  <bpmn2:process id="Process_RetryStormSentinel_ExceptionHandling" isExecutable="true">
+    
+    <!-- ============================================================================== -->
+    <!-- Exception Subprocess Triggered on Error (e.g. HTTP 429 / 503 / Timeout)        -->
+    <!-- ============================================================================== -->
+    <bpmn2:subProcess id="SubProcess_SentinelExceptionHandling" name="Retry Storm Sentinel Exception Subprocess" triggeredByEvent="true">
+      
+      <!-- 1. Catch Any Routing or Target Failure -->
+      <bpmn2:startEvent id="ErrorStartEvent_Sentinel" name="Catch Delivery Failure">
+        <bpmn2:errorEventDefinition id="ErrorEventDef_1"/>
+      </bpmn2:startEvent>
+
+      <bpmn2:sequenceFlow id="Flow_1" sourceRef="ErrorStartEvent_Sentinel" targetRef="ScriptStep_SentinelPusher"/>
+
+      <!-- 2. Groovy Script Step: Assemble Sentinel JSON Snapshot -->
+      <bpmn2:callActivity id="ScriptStep_SentinelPusher" name="Assemble Sentinel Telemetry">
+        <bpmn2:extensionElements>
+          <ifl:property>
+            <key>scriptBundleId</key>
+            <value>SentinelTelemetryPusher.groovy</value>
+          </ifl:property>
+          <ifl:property>
+            <key>scriptFunction</key>
+            <value>processData</value>
+          </ifl:property>
+        </bpmn2:extensionElements>
+      </bpmn2:callActivity>
+
+      <bpmn2:sequenceFlow id="Flow_2" sourceRef="ScriptStep_SentinelPusher" targetRef="ServiceTask_SendSentinelHTTP"/>
+
+      <!-- 3. HTTP Request-Reply Step: Dispatch to Sentinel Ingestion Endpoint -->
+      <bpmn2:serviceTask id="ServiceTask_SendSentinelHTTP" name="POST /ingestTelemetry">
+        <bpmn2:extensionElements>
+          <ifl:property>
+            <key>componentType</key>
+            <value>HTTP</value>
+          </ifl:property>
+          <ifl:property>
+            <key>httpMethod</key>
+            <value>POST</value>
+          </ifl:property>
+          <ifl:property>
+            <key>httpAddressWithoutQuery</key>
+            <value>{{SENTINEL_BASE_URL}}/odata/v4/monitoring/ingestTelemetry</value>
+          </ifl:property>
+          <ifl:property>
+            <key>authenticationMethod</key>
+            <value>OAuth2ClientCredentials</value>
+          </ifl:property>
+          <ifl:property>
+            <key>alias</key>
+            <value>SENTINEL_BTP_CREDENTIALS</value>
+          </ifl:property>
+          <ifl:property>
+            <key>httpRequestTimeout</key>
+            <value>3000</value>
+          </ifl:property>
+        </bpmn2:extensionElements>
+      </bpmn2:serviceTask>
+
+      <bpmn2:sequenceFlow id="Flow_3" sourceRef="ServiceTask_SendSentinelHTTP" targetRef="EndEvent_ErrorEscalation"/>
+
+      <!-- 4. Propagate Original Error / Route to Dead Letter Queue (DLQ) -->
+      <bpmn2:endEvent id="EndEvent_ErrorEscalation" name="Escalate or DLQ">
+        <bpmn2:errorEventDefinition id="ErrorEventDef_2"/>
+      </bpmn2:endEvent>
+
+    </bpmn2:subProcess>
+
+  </bpmn2:process>
+</bpmn2:definitions>
