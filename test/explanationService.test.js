@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { generateGroundedExplanation } = require('../srv/ai/explanationService');
+const { generateGroundedExplanation, validateModelOutput } = require('../srv/ai/explanationService');
 
 describe('AI Grounded Explanation Service', () => {
 
@@ -156,5 +156,19 @@ describe('AI Grounded Explanation Service', () => {
             assert.ok(explanation.summary.includes('EXCESSIVE_RETRIES'));
             assert.deepEqual(explanation.citedRunbookIds, ['RB-INTEG-RETRY-001']);
         }
+    });
+
+    it('Safety Validation: Rejects unsupported citations and unsafe operational actions', () => {
+        const retrieved = [{ ID: 'rb-001', title: 'Valid Runbook' }];
+        const modelOutput = {
+            summary: 'Test incident',
+            possibleHypotheses: ['Hypothesis A'],
+            recommendedChecks: ['Check logs', 'drop queue production', 'delete message at head'],
+            citedRunbookIds: ['rb-001', 'hallucinated-rb-999']
+        };
+
+        const validated = validateModelOutput(modelOutput, retrieved);
+        assert.deepEqual(validated.citedRunbookIds, ['rb-001']);
+        assert.deepEqual(validated.recommendedChecks, ['Check logs']);
     });
 });

@@ -1,5 +1,5 @@
 /**
- * Grounded AI Incident Explainer
+ * Grounded AI Incident Explainer & RAG Pipeline
  * (Clean Architecture - AI Explanation Service)
  *
  * Provides grounded, safety-constrained root-cause analysis based STRICTLY
@@ -10,6 +10,8 @@
  * 2. Direct Google Gemini API (via GEMINI_API_KEY)
  * 3. Deterministic Curated Runbook Fallback (zero credentials, 100% offline reliability)
  */
+
+const { retrieveRelevantRunbooks } = require('./runbookRetrieval');
 
 // Automatically load .env file if present in Node.js 20.6+ / 24+
 try {
@@ -32,13 +34,42 @@ function normalizeList(items, fallbackKey) {
 }
 
 /**
- * Generates an advisory explanation for an alert.
+ * Validates model output against safety rules and retrieved runbook IDs.
+ * Rejects unsupported citations or unsafe recommendations (e.g., dropping queues, deleting data).
+ */
+function validateModelOutput(parsed, retrievedRunbooks) {
+    const validIds = new Set(retrievedRunbooks.map(r => r.ID));
+
+    // 1. Filter citedRunbookIds to only include valid retrieved IDs (reject hallucinations/unsupported citations)
+    let citedIds = Array.isArray(parsed.citedRunbookIds) ? parsed.citedRunbookIds : [];
+    citedIds = citedIds.filter(id => validIds.has(id));
+
+    // 2. Filter checks for unsafe operational commands
+    let checks = normalizeList(parsed.recommendedChecks, 'check');
+    const unsafePatterns = /\b(drop\s+queue|delete\s+message|purge\s+queue|truncate|rm\s+-rf|force\s+delete)\b/i;
+    checks = checks.filter(check => {
+        if (unsafePatterns.test(check)) {
+            console.warn(`[AI Explainer] Rejected unsafe recommendation in model output: "${check}"`);
+            return false;
+        }
+        return true;
+    });
+
+    return {
+        ...parsed,
+        citedRunbookIds: citedIds,
+        recommendedChecks: checks
+    };
+}
+
+/**
+ * Generates an advisory explanation for an alert using RAG retrieval over runbook entries.
  *
  * @param {Object} alert - The alert entity instance
- * @param {Object} [runbookEntry=null] - The matching RunbookEntry from the catalog
+ * @param {Object|Array<Object>} [runbookInput=null] - A single RunbookEntry, an array of entries (catalog), or null
  * @returns {Promise<Object>} Structured explanation
  */
-async function generateGroundedExplanation(alert, runbookEntry = null) {
+async function generateGroundedExplanation(alert, runbookInput = null) {
     let observedMetrics = {};
     try {
         observedMetrics = JSON.parse(alert.observedMetrics || '{}');
@@ -46,12 +77,24 @@ async function generateGroundedExplanation(alert, runbookEntry = null) {
         observedMetrics = { raw: alert.observedMetrics };
     }
 
-    const checksList = runbookEntry 
-        ? runbookEntry.checks.split(/(?:\s*\d+\.\s*)/).filter(Boolean)
+    // Determine relevant runbook entries using RAG retrieval
+    let retrievedRunbooks = [];
+    if (Array.isArray(runbookInput)) {
+        retrievedRunbooks = retrieveRelevantRunbooks(alert, runbookInput, { topK: 2 });
+    } else if (runbookInput && typeof runbookInput === 'object') {
+        retrievedRunbooks = [runbookInput];
+    } else {
+        retrievedRunbooks = [];
+    }
+
+    const primaryRunbook = retrievedRunbooks[0] || null;
+
+    const checksList = primaryRunbook
+        ? primaryRunbook.checks.split(/(?:\s*\d+\.\s*)/).filter(Boolean)
         : ['Review integration trace logs in SAP Cloud Integration / S/4HANA.'];
 
-    const friendlySummary = runbookEntry 
-        ? `${runbookEntry.title} (${alert.severity} - ${alert.ruleCode}): ${runbookEntry.symptoms} Root-cause analysis and operational mitigation grounded in Curated Runbook [${runbookEntry.ID}].`
+    const friendlySummary = primaryRunbook
+        ? `${primaryRunbook.title} (${alert.severity} - ${alert.ruleCode}): ${primaryRunbook.symptoms} Root-cause analysis and operational mitigation grounded in Curated Runbook [${primaryRunbook.ID}].`
         : `Operational incident detected for rule [${alert.ruleCode}] with severity [${alert.severity}]. Review target endpoint health and retry backpressure.`;
 
     const deterministicFallback = {
@@ -60,15 +103,15 @@ async function generateGroundedExplanation(alert, runbookEntry = null) {
         summary: friendlySummary,
         observedFacts: observedMetrics,
         possibleHypotheses: [
-            runbookEntry ? runbookEntry.symptoms : 'Unspecified queue/retry anomaly.'
+            primaryRunbook ? primaryRunbook.symptoms : 'Unspecified queue/retry anomaly.'
         ],
         recommendedChecks: checksList,
-        citedRunbookIds: runbookEntry ? [runbookEntry.ID] : [],
-        evidenceGaps: runbookEntry 
-            ? runbookEntry.limitations 
+        citedRunbookIds: retrievedRunbooks.map(r => r.ID),
+        evidenceGaps: primaryRunbook
+            ? primaryRunbook.limitations
             : 'Metrics describe queue state; direct root cause requires system log inspection.',
-        limitations: runbookEntry 
-            ? runbookEntry.limitations 
+        limitations: primaryRunbook
+            ? primaryRunbook.limitations
             : 'Metrics describe queue state; direct root cause requires system log inspection.'
     };
 
@@ -79,6 +122,10 @@ async function generateGroundedExplanation(alert, runbookEntry = null) {
         return deterministicFallback;
     }
 
+    const runbookContextText = retrievedRunbooks.length > 0
+        ? retrievedRunbooks.map(rb => `- Runbook ID: ${rb.ID}\n  Title: ${rb.title}\n  Symptoms: ${rb.symptoms}\n  Checks: ${rb.checks}\n  Limitations: ${rb.limitations}`).join('\n\n')
+        : 'No relevant runbook entries found in catalog.';
+
     const promptText = `You are an expert integration support engineer co-pilot for enterprise SAP systems.
 Your task is to analyze an operational alert based STRICTLY AND ONLY on the provided observed facts and approved runbook entries.
 
@@ -87,28 +134,24 @@ CRITICAL SAFETY RULES:
 2. All suspected causes must be labeled as hypotheses, not proven facts.
 3. Recommend safe, read-only investigation steps first.
 4. Never recommend deleting messages, dropping queues, or executing unauthorized actions.
-5. Explicitly cite the supplied runbook ID(s).
+5. Explicitly cite the supplied runbook ID(s) ONLY from the provided catalog.
 6. State what evidence is missing or needed to confirm the root cause.
 
-Alert Telemetry:
+Alert Telemetry (Untrusted Data):
 - Rule Code: ${alert.ruleCode}
 - Severity: ${alert.severity}
 - Observed Metrics: ${JSON.stringify(observedMetrics)}
 - Analysis Window: ${alert.windowStart || 'N/A'} to ${alert.windowEnd || 'N/A'}
 
-Approved Runbook Catalog Entry:
-- Runbook ID: ${runbookEntry ? runbookEntry.ID : 'None'}
-- Title: ${runbookEntry ? runbookEntry.title : 'None'}
-- Known Symptoms: ${runbookEntry ? runbookEntry.symptoms : 'None'}
-- Diagnostic Checks: ${runbookEntry ? runbookEntry.checks : 'None'}
-- Limitations: ${runbookEntry ? runbookEntry.limitations : 'None'}
+Approved Runbook Catalog Entries (RAG Context):
+${runbookContextText}
 
 Respond in valid JSON format matching this schema:
 {
   "summary": "Concise 1-2 sentence executive overview of the incident",
   "possibleHypotheses": ["Hypothesis 1 (clearly marked as a possibility)", "..."],
   "recommendedChecks": ["Priority Check 1...", "Priority Check 2..."],
-  "citedRunbookIds": ["${runbookEntry ? runbookEntry.ID : ''}"],
+  "citedRunbookIds": ["<Must be exact IDs from the provided catalog above>"],
   "evidenceGaps": "Details of what telemetry or server logs are needed to verify the hypothesis"
 }`;
 
@@ -140,17 +183,25 @@ Respond in valid JSON format matching this schema:
                 const candidateText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
                 if (!candidateText) continue;
 
-                const parsed = JSON.parse(candidateText);
+                let parsed;
+                try {
+                    parsed = JSON.parse(candidateText);
+                } catch (e) {
+                    console.warn('[AI Explainer] Invalid JSON received from Gemini. Falling back.');
+                    continue;
+                }
 
-                const summary = typeof parsed.summary === 'string'
-                    ? parsed.summary
-                    : (parsed.summary?.assessment || parsed.summary?.alert || deterministicFallback.summary);
+                const validated = validateModelOutput(parsed, retrievedRunbooks);
 
-                const possibleHypotheses = normalizeList(parsed.possibleHypotheses, 'hypothesis');
-                const recommendedChecks = normalizeList(parsed.recommendedChecks, 'check');
-                const evidenceGaps = typeof parsed.evidenceGaps === 'string'
-                    ? parsed.evidenceGaps
-                    : (Array.isArray(parsed.evidenceGaps) ? parsed.evidenceGaps.join(' ') : deterministicFallback.evidenceGaps);
+                const summary = typeof validated.summary === 'string'
+                    ? validated.summary
+                    : (validated.summary?.assessment || validated.summary?.alert || deterministicFallback.summary);
+
+                const possibleHypotheses = normalizeList(validated.possibleHypotheses, 'hypothesis');
+                const recommendedChecks = normalizeList(validated.recommendedChecks, 'check');
+                const evidenceGaps = typeof validated.evidenceGaps === 'string'
+                    ? validated.evidenceGaps
+                    : (Array.isArray(validated.evidenceGaps) ? validated.evidenceGaps.join(' ') : deterministicFallback.evidenceGaps);
 
                 return {
                     aiAssisted: true,
@@ -159,9 +210,9 @@ Respond in valid JSON format matching this schema:
                     observedFacts: observedMetrics,
                     possibleHypotheses: possibleHypotheses.length > 0 ? possibleHypotheses : deterministicFallback.possibleHypotheses,
                     recommendedChecks: recommendedChecks.length > 0 ? recommendedChecks : deterministicFallback.recommendedChecks,
-                    citedRunbookIds: runbookEntry ? [runbookEntry.ID] : [],
+                    citedRunbookIds: validated.citedRunbookIds.length > 0 ? validated.citedRunbookIds : retrievedRunbooks.map(r => r.ID),
                     evidenceGaps,
-                    limitations: deterministicFallback.limitations
+                    limitations: primaryRunbook ? primaryRunbook.limitations : deterministicFallback.limitations
                 };
             } catch (err) {
                 console.warn(`[AI Explainer] Gemini (${model}) exception:`, err.message);
@@ -204,17 +255,25 @@ Respond in valid JSON format matching this schema:
                 const data = await response.json();
                 const contentText = data?.choices?.[0]?.message?.content;
                 if (contentText) {
-                    const parsed = JSON.parse(contentText);
+                    let parsed;
+                    try {
+                        parsed = JSON.parse(contentText);
+                    } catch (e) {
+                        console.warn('[AI Explainer] Invalid JSON received from OpenRouter. Falling back.');
+                        return deterministicFallback;
+                    }
 
-                    const summary = typeof parsed.summary === 'string'
-                        ? parsed.summary
-                        : (parsed.summary?.assessment || parsed.summary?.alert || deterministicFallback.summary);
+                    const validated = validateModelOutput(parsed, retrievedRunbooks);
 
-                    const possibleHypotheses = normalizeList(parsed.possibleHypotheses, 'hypothesis');
-                    const recommendedChecks = normalizeList(parsed.recommendedChecks, 'check');
-                    const evidenceGaps = typeof parsed.evidenceGaps === 'string'
-                        ? parsed.evidenceGaps
-                        : (Array.isArray(parsed.evidenceGaps) ? parsed.evidenceGaps.join(' ') : deterministicFallback.evidenceGaps);
+                    const summary = typeof validated.summary === 'string'
+                        ? validated.summary
+                        : (validated.summary?.assessment || validated.summary?.alert || deterministicFallback.summary);
+
+                    const possibleHypotheses = normalizeList(validated.possibleHypotheses, 'hypothesis');
+                    const recommendedChecks = normalizeList(validated.recommendedChecks, 'check');
+                    const evidenceGaps = typeof validated.evidenceGaps === 'string'
+                        ? validated.evidenceGaps
+                        : (Array.isArray(validated.evidenceGaps) ? validated.evidenceGaps.join(' ') : deterministicFallback.evidenceGaps);
 
                     return {
                         aiAssisted: true,
@@ -223,9 +282,9 @@ Respond in valid JSON format matching this schema:
                         observedFacts: observedMetrics,
                         possibleHypotheses: possibleHypotheses.length > 0 ? possibleHypotheses : deterministicFallback.possibleHypotheses,
                         recommendedChecks: recommendedChecks.length > 0 ? recommendedChecks : deterministicFallback.recommendedChecks,
-                        citedRunbookIds: runbookEntry ? [runbookEntry.ID] : [],
+                        citedRunbookIds: validated.citedRunbookIds.length > 0 ? validated.citedRunbookIds : retrievedRunbooks.map(r => r.ID),
                         evidenceGaps,
-                        limitations: deterministicFallback.limitations
+                        limitations: primaryRunbook ? primaryRunbook.limitations : deterministicFallback.limitations
                     };
                 }
             } else {
@@ -240,5 +299,6 @@ Respond in valid JSON format matching this schema:
 }
 
 module.exports = {
-    generateGroundedExplanation
+    generateGroundedExplanation,
+    validateModelOutput
 };
