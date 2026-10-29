@@ -1332,6 +1332,7 @@
                 <button class="btn-scenario sim-btn" type="button" data-scenario="RECOVERY">Recovery</button>
                 <button class="btn-scenario sim-btn" type="button" data-scenario="RECOVERY_STALLED">Stalled
                     recovery</button>
+                <button id="btnOpenThresholdModal" class="btn-scenario" type="button" title="Configure per-interface SLA thresholds (Admin only)" style="background-color: var(--color-harbor); color: white;">Configure thresholds</button>
                 <button id="btnResetSeed" class="btn-scenario btn-reset" type="button" title="Reset all queues and alerts to clean factory baseline">Reset to baseline</button>
             </div>
             <div id="scenarioFeedback" class="scenario-feedback-bar" aria-live="polite"></div>
@@ -1357,6 +1358,60 @@
             <div class="drawer-footer">
                 <button id="drawerExportBtn" class="btn-harbor" type="button" style="margin-right: auto;">Download Postmortem (.md)</button>
                 <button id="drawerCloseBtn" class="btn-quiet" type="button">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Threshold Configuration Modal -->
+    <div id="thresholdModal" class="drawer-overlay" role="dialog" aria-modal="true" aria-labelledby="thresholdModalTitle" aria-hidden="true">
+        <div class="drawer-panel" style="max-width: 540px;">
+            <div class="drawer-header">
+                <div class="drawer-header-text">
+                    <h3 id="thresholdModalTitle" class="drawer-title">Interface Threshold Policy Configuration</h3>
+                    <p class="drawer-subtitle">Configure per-interface SLA detection limits (Admin only)</p>
+                </div>
+                <button id="thresholdModalCloseX" class="drawer-close-btn" type="button" aria-label="Close threshold modal">&times;</button>
+            </div>
+            <div class="drawer-body">
+                <div id="thresholdPermissionNotice" class="alert-banner" style="display: none; background-color: #FCEFD9; color: #7A4A00; border: 1px solid #F8D7DA; padding: 12px; border-radius: 6px; font-size: 0.8125rem; margin-bottom: 12px;"></div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="thresholdInterfaceSelect" style="display: block; font-weight: 600; margin-bottom: 6px;">Select Monitored Interface:</label>
+                    <select id="thresholdInterfaceSelect" class="form-select" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-divider); background: var(--color-card-bg); font-family: var(--font-body);">
+                        <!-- populated dynamically -->
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="maxRetryThreshold" style="display: block; font-weight: 600; margin-bottom: 4px;">Max Retry Threshold (Rule A - Excessive Retries):</label>
+                    <p style="font-size: 0.75rem; color: var(--color-slate); margin: 0 0 6px 0;">Trigger critical alert when retry attempts exceed this limit (1 - 10,000).</p>
+                    <input type="number" id="maxRetryThreshold" min="1" max="10000" class="form-input" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-divider);" />
+                </div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="queueGrowthLimit" style="display: block; font-weight: 600; margin-bottom: 4px;">Queue Growth Limit (Rule B - Backlog Inflow):</label>
+                    <p style="font-size: 0.75rem; color: var(--color-slate); margin: 0 0 6px 0;">Trigger high alert when pending backlog exceeds this limit (1 - 100,000).</p>
+                    <input type="number" id="queueGrowthLimit" min="1" max="100000" class="form-input" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-divider);" />
+                </div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="oldMessageAgeLimitSeconds" style="display: block; font-weight: 600; margin-bottom: 4px;">Old Message Age Limit (Rule C - Stale SLA in Seconds):</label>
+                    <p style="font-size: 0.75rem; color: var(--color-slate); margin: 0 0 6px 0;">Trigger high alert when oldest message age exceeds this SLA (10 - 2,592,000s).</p>
+                    <input type="number" id="oldMessageAgeLimitSeconds" min="10" max="2592000" class="form-input" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-divider);" />
+                </div>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="recoveryStalledBacklog" style="display: block; font-weight: 600; margin-bottom: 4px;">Recovery Stalled Backlog (Rule D - Stalled Recovery):</label>
+                    <p style="font-size: 0.75rem; color: var(--color-slate); margin: 0 0 6px 0;">Trigger high alert if queue fails to drain post-recovery (1 - 100,000).</p>
+                    <input type="number" id="recoveryStalledBacklog" min="1" max="100000" class="form-input" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-divider);" />
+                </div>
+
+                <div id="thresholdModalFeedback" style="padding: 10px; border-radius: 6px; font-size: 0.8125rem; margin-bottom: 12px; display: none;"></div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 12px;">
+                    <button id="thresholdModalCancel" class="btn-quiet" type="button">Cancel</button>
+                    <button id="thresholdModalSave" class="btn-scenario sim-btn" type="button" style="background-color: var(--color-harbor); color: white;">Save Thresholds</button>
+                </div>
             </div>
         </div>
     </div>

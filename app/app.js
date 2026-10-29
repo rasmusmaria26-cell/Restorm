@@ -1577,7 +1577,144 @@
                 if (e.key === 'Escape' && drawer && drawer.classList.contains('is-open')) {
                     closeExplainDrawer();
                 }
+                const thresholdModal = document.getElementById('thresholdModal');
+                if (e.key === 'Escape' && thresholdModal && thresholdModal.classList.contains('is-open')) {
+                    closeThresholdModal();
+                }
             });
+
+            // Threshold Modal events
+            const btnOpenThreshold = document.getElementById('btnOpenThresholdModal');
+            const btnCloseThreshold = document.getElementById('thresholdModalCloseX');
+            const btnCancelThreshold = document.getElementById('thresholdModalCancel');
+            const btnSaveThreshold = document.getElementById('thresholdModalSave');
+            const thresholdInterfaceSelect = document.getElementById('thresholdInterfaceSelect');
+            const thresholdModal = document.getElementById('thresholdModal');
+
+            if (btnOpenThreshold) btnOpenThreshold.addEventListener('click', openThresholdModal);
+            if (btnCloseThreshold) btnCloseThreshold.addEventListener('click', closeThresholdModal);
+            if (btnCancelThreshold) btnCancelThreshold.addEventListener('click', closeThresholdModal);
+            if (btnSaveThreshold) btnSaveThreshold.addEventListener('click', handleSaveThresholds);
+            if (thresholdInterfaceSelect) thresholdInterfaceSelect.addEventListener('change', populateSelectedInterfaceThresholds);
+            if (thresholdModal) {
+                thresholdModal.addEventListener('click', (e) => {
+                    if (e.target === thresholdModal) closeThresholdModal();
+                });
+            }
+        }
+
+        // Threshold Configuration Modal Logic
+        function openThresholdModal() {
+            const modal = document.getElementById('thresholdModal');
+            if (!modal) return;
+            modal.classList.add('is-open');
+            modal.setAttribute('aria-hidden', 'false');
+            syncThresholdInterfaceSelect();
+            updateThresholdModalPermissions();
+        }
+
+        function closeThresholdModal() {
+            const modal = document.getElementById('thresholdModal');
+            if (!modal) return;
+            modal.classList.remove('is-open');
+            modal.setAttribute('aria-hidden', 'true');
+            const feedback = document.getElementById('thresholdModalFeedback');
+            if (feedback) feedback.style.display = 'none';
+        }
+
+        function syncThresholdInterfaceSelect() {
+            const select = document.getElementById('thresholdInterfaceSelect');
+            if (!select || !latestInterfaces || latestInterfaces.length === 0) return;
+
+            const currentSelected = select.value;
+            select.innerHTML = '';
+            for (const iface of latestInterfaces) {
+                const opt = document.createElement('option');
+                opt.value = iface.ID;
+                opt.textContent = `${iface.name} (${iface.sourceSystem} → ${iface.targetSystem})`;
+                select.appendChild(opt);
+            }
+            if (currentSelected && latestInterfaces.some(i => i.ID === currentSelected)) {
+                select.value = currentSelected;
+            }
+            populateSelectedInterfaceThresholds();
+        }
+
+        function populateSelectedInterfaceThresholds() {
+            const select = document.getElementById('thresholdInterfaceSelect');
+            if (!select || !latestInterfaces) return;
+            const iface = latestInterfaces.find(i => i.ID === select.value);
+            if (!iface) return;
+
+            document.getElementById('maxRetryThreshold').value = iface.maxRetryThreshold ?? 100;
+            document.getElementById('queueGrowthLimit').value = iface.queueGrowthLimit ?? 200;
+            document.getElementById('oldMessageAgeLimitSeconds').value = iface.oldMessageAgeLimitSeconds ?? 600;
+            document.getElementById('recoveryStalledBacklog').value = iface.recoveryStalledBacklog ?? 100;
+        }
+
+        function updateThresholdModalPermissions() {
+            const user = USER_PERMISSIONS[currentUsername] || {};
+            const notice = document.getElementById('thresholdPermissionNotice');
+            const isAdmin = currentUsername === 'admin';
+
+            if (!isAdmin) {
+                notice.style.display = 'block';
+                notice.textContent = `ℹ️ Signed in as ${user.title} (${user.roleLabel}). Threshold configuration requires Simulator Admin permissions. Saving changes will be rejected with 403 Forbidden.`;
+            } else {
+                notice.style.display = 'none';
+            }
+        }
+
+        async function handleSaveThresholds() {
+            const feedback = document.getElementById('thresholdModalFeedback');
+            const select = document.getElementById('thresholdInterfaceSelect');
+            if (!select) return;
+
+            const interfaceId = select.value;
+            const maxRetryThreshold = parseInt(document.getElementById('maxRetryThreshold').value, 10);
+            const queueGrowthLimit = parseInt(document.getElementById('queueGrowthLimit').value, 10);
+            const oldMessageAgeLimitSeconds = parseInt(document.getElementById('oldMessageAgeLimitSeconds').value, 10);
+            const recoveryStalledBacklog = parseInt(document.getElementById('recoveryStalledBacklog').value, 10);
+
+            if (isNaN(maxRetryThreshold) || isNaN(queueGrowthLimit) || isNaN(oldMessageAgeLimitSeconds) || isNaN(recoveryStalledBacklog)) {
+                feedback.style.display = 'block';
+                feedback.style.backgroundColor = '#FBE3E0';
+                feedback.style.color = '#9C1F17';
+                feedback.textContent = 'Please enter valid numbers for all threshold fields.';
+                return;
+            }
+
+            try {
+                feedback.style.display = 'block';
+                feedback.style.backgroundColor = '#FCEFD9';
+                feedback.style.color = '#7A4A00';
+                feedback.textContent = 'Saving threshold policy...';
+
+                await fetchJSON('/odata/v4/monitoring/configureThresholds', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        interfaceId,
+                        maxRetryThreshold,
+                        queueGrowthLimit,
+                        oldMessageAgeLimitSeconds,
+                        recoveryStalledBacklog
+                    })
+                });
+
+                feedback.style.backgroundColor = '#E1F4EC';
+                feedback.style.color = '#1F7A5A';
+                feedback.textContent = 'Threshold policy updated successfully! Refreshing data...';
+
+                await refreshData();
+                setTimeout(() => {
+                    closeThresholdModal();
+                }, 1200);
+            } catch (err) {
+                feedback.style.backgroundColor = '#FBE3E0';
+                feedback.style.color = '#9C1F17';
+                feedback.textContent = getFriendlyErrorMessage(err, 'thresholds');
+            }
         }
 
         // Bootstrapping
