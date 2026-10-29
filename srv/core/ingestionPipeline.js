@@ -78,11 +78,11 @@ async function processSnapshotAndEvaluate(entities, targetInterfaceOrId, snapsho
     }
 
     // 1. Retrieve preceding snapshot for differential analysis (e.g. Rule D: Recovery Stalled)
-    // To ensure deterministic tie-breaking when capturedAt timestamps are identical,
-    // order by capturedAt descending, then by createdAt descending (or ID descending).
+    // To ensure fully deterministic tie-breaking when capturedAt and createdAt are identical,
+    // order by capturedAt descending, createdAt descending, and ID descending.
     const previousSnapshot = await SELECT.one.from(QueueSnapshots)
         .where({ interface_ID: targetInterfaceId })
-        .orderBy('capturedAt desc', 'createdAt desc');
+        .orderBy('capturedAt desc', 'createdAt desc', 'ID desc');
 
     // 2. Persist snapshot
     await INSERT.into(QueueSnapshots).entries(snapshotData);

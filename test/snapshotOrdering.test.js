@@ -40,7 +40,7 @@ describe('Deterministic Snapshot Ordering & Incident Lifecycle Protection', () =
             oldestPendingAgeSeconds: 10
         });
 
-        // Second snapshot with identical capturedAt
+        // Second snapshot with identical capturedAt and simulated identical createdAt tie-breaking test
         const resStr = await bobTx.send('ingestTelemetry', {
             interfaceId: targetInterfaceId,
             capturedAt: sharedTimestamp,
@@ -54,13 +54,16 @@ describe('Deterministic Snapshot Ordering & Incident Lifecycle Protection', () =
         const res = JSON.parse(resStr);
         assert.equal(res.status, 'Accepted');
 
-        // Verify both snapshots exist
+        // Verify both snapshots exist and are ordered deterministically by capturedAt desc, createdAt desc, ID desc
         const snapshots = await bobTx.run(
             SELECT.from(srv.entities.QueueSnapshots)
                 .where({ interface_ID: targetInterfaceId })
-                .orderBy('capturedAt desc', 'createdAt desc')
+                .orderBy('capturedAt desc', 'createdAt desc', 'ID desc')
         );
         assert.ok(snapshots.length >= 2);
+        // Ensure newest (highest ID or later createdAt) comes first
+        assert.equal(snapshots[0].pendingCount, 60);
+        assert.equal(snapshots[1].pendingCount, 50);
     });
 
     it('T2 Repeated Ingestion: Deduplicates or handles repeated ingestion safely without corruption', async () => {
