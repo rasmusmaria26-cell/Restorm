@@ -33,15 +33,13 @@ describe('Incident Report Export (Phase 3)', () => {
         await bobTx.send({
             event: 'acknowledge',
             entity: 'Alerts',
-            params: [{ ID: testAlertId }],
-            data: { acknowledgedBy: 'Incident Commander Bob' }
+            params: [{ ID: testAlertId }]
         });
 
         await bobTx.send({
             event: 'resolveAlert',
             entity: 'Alerts',
-            params: [{ ID: testAlertId }],
-            data: { resolvedBy: 'SRE Lead Alice' }
+            params: [{ ID: testAlertId }]
         });
     });
 
@@ -63,8 +61,8 @@ describe('Incident Report Export (Phase 3)', () => {
         assert.match(report, /# INCIDENT POSTMORTEM REPORT: EXCESSIVE_RETRIES/);
         assert.match(report, /Executive Summary/);
         assert.match(report, /Incident Timeline & Audit Trail/);
-        assert.match(report, /Incident Commander Bob/);
-        assert.match(report, /SRE Lead Alice/);
+        assert.match(report, /bob/);
+        assert.match(report, /bob/);
         assert.match(report, /Telemetry Evidence at Incident Peak/);
         assert.match(report, /Root Cause Analysis/);
         assert.match(report, /Prevention & Governance/);
@@ -84,8 +82,8 @@ describe('Incident Report Export (Phase 3)', () => {
         assert.equal(data.alertId, testAlertId);
         assert.equal(data.ruleCode, 'EXCESSIVE_RETRIES');
         assert.equal(data.status, 'Resolved');
-        assert.equal(data.acknowledgedBy, 'Incident Commander Bob');
-        assert.equal(data.resolvedBy, 'SRE Lead Alice');
+        assert.equal(data.acknowledgedBy, 'bob');
+        assert.equal(data.resolvedBy, 'bob');
         assert.ok(data.observedMetrics);
         assert.ok(data.interface);
     });

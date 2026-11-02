@@ -1,3 +1,12 @@
+// Automatically load .env file if present in Node.js 20.6+ / 24+
+try {
+    if (typeof process.loadEnvFile === 'function') {
+        process.loadEnvFile();
+    }
+} catch (e) {
+    // .env is optional; ignore if missing
+}
+
 const cds = require('@sap/cds');
 const { generateSnapshotData, ALLOWED_SCENARIOS } = require('./core/simulator');
 const { generateGroundedExplanation } = require('./ai/explanationService');
@@ -8,10 +17,15 @@ const {
     processSnapshotAndEvaluate
 } = require('./core/ingestionPipeline');
 const { buildTopologyGraph } = require('./core/topologyService');
+const { enforceRateLimit, enforceBodySize, LIMITERS } = require('./rateLimiter');
 
 /**
  * MonitoringService Controller
  * Delegates business actions to pure domain services
+ *
+ * Rate limiting is enforced server-side on state-changing and expensive actions,
+ * keyed by the authenticated user identity from the CAP request context (req.user.id).
+ * Client-provided usernames are never trusted as rate limit keys.
  */
 module.exports = class MonitoringService extends cds.ApplicationService {
     async init() {
@@ -24,7 +38,11 @@ module.exports = class MonitoringService extends cds.ApplicationService {
                 return req.reject(400, 'Invalid alert ID');
             }
 
-            let acknowledgedBy = req.data?.acknowledgedBy || req.user?.id || 'Operator';
+            // Rate limit: state-changing alert lifecycle action
+            const rateLimitResult = enforceRateLimit(req, 'acknowledge', LIMITERS.acknowledge);
+            if (rateLimitResult) return rateLimitResult;
+
+            let acknowledgedBy = req.user?.id || 'Operator';
             if (typeof acknowledgedBy !== 'string') acknowledgedBy = 'Operator';
             acknowledgedBy = acknowledgedBy.trim().replace(/[\r\n\t]/g, ' ').substring(0, 100);
 
@@ -51,7 +69,11 @@ module.exports = class MonitoringService extends cds.ApplicationService {
                 return req.reject(400, 'Invalid alert ID');
             }
 
-            let resolvedBy = req.data?.resolvedBy || req.user?.id || 'Operator';
+            // Rate limit: state-changing alert lifecycle action
+            const rateLimitResult = enforceRateLimit(req, 'resolveAlert', LIMITERS.resolveAlert);
+            if (rateLimitResult) return rateLimitResult;
+
+            let resolvedBy = req.user?.id || 'Operator';
             if (typeof resolvedBy !== 'string') resolvedBy = 'Operator';
             resolvedBy = resolvedBy.trim().replace(/[\r\n\t]/g, ' ').substring(0, 100);
 
@@ -77,6 +99,10 @@ module.exports = class MonitoringService extends cds.ApplicationService {
             if (!alertId || typeof alertId !== 'string') {
                 return req.reject(400, 'Invalid alert ID');
             }
+
+            // Rate limit: expensive LLM explanation requests
+            const rateLimitResult = enforceRateLimit(req, 'explain', LIMITERS.explain);
+            if (rateLimitResult) return rateLimitResult;
 
             const alert = await SELECT.one.from(Alerts).where({ ID: alertId });
             if (!alert) return req.reject(404, `Alert not found`);
@@ -161,6 +187,14 @@ module.exports = class MonitoringService extends cds.ApplicationService {
 
         // Action: Ingest external integration telemetry
         this.on('ingestTelemetry', async (req) => {
+            // Protect against oversized request bodies
+            const bodySizeResult = enforceBodySize(req);
+            if (bodySizeResult) return bodySizeResult;
+
+            // Rate limit: telemetry ingestion
+            const rateLimitResult = enforceRateLimit(req, 'ingestTelemetry', LIMITERS.ingestTelemetry);
+            if (rateLimitResult) return rateLimitResult;
+
             const data = req.data || {};
             const { interfaceId, capturedAt } = data;
 
@@ -233,6 +267,14 @@ module.exports = class MonitoringService extends cds.ApplicationService {
 
         // Action: Trigger scenario simulation & evaluate detection rules
         this.on('triggerSimulation', async (req) => {
+            // Protect against oversized request bodies
+            const bodySizeResult = enforceBodySize(req);
+            if (bodySizeResult) return bodySizeResult;
+
+            // Rate limit: simulation trigger
+            const rateLimitResult = enforceRateLimit(req, 'triggerSimulation', LIMITERS.triggerSimulation);
+            if (rateLimitResult) return rateLimitResult;
+
             const { scenario, interfaceId } = req.data || {};
 
             // 1. Validate scenario input against frozen allowlist
@@ -271,6 +313,14 @@ module.exports = class MonitoringService extends cds.ApplicationService {
 
         // Action: Configure per-interface threshold policies (Admin only)
         this.on('configureThresholds', async (req) => {
+            // Protect against oversized request bodies
+            const bodySizeResult = enforceBodySize(req);
+            if (bodySizeResult) return bodySizeResult;
+
+            // Rate limit: threshold configuration
+            const rateLimitResult = enforceRateLimit(req, 'configureThresholds', LIMITERS.configureThresholds);
+            if (rateLimitResult) return rateLimitResult;
+
             const data = req.data || {};
             const { interfaceId } = data;
 
@@ -307,6 +357,10 @@ module.exports = class MonitoringService extends cds.ApplicationService {
 
         // Administrative Action: Reset database to clean baseline seed
         this.on('resetToCleanSeed', async (req) => {
+            // Rate limit: destructive database reset — strictest limit
+            const rateLimitResult = enforceRateLimit(req, 'resetToCleanSeed', LIMITERS.resetToCleanSeed);
+            if (rateLimitResult) return rateLimitResult;
+
             // Delete all generated alerts and runtime snapshots
             await DELETE.from(Alerts);
             await DELETE.from(QueueSnapshots);

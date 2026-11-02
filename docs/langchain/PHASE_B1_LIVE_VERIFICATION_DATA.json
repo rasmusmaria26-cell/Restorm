@@ -1,0 +1,121 @@
+{
+  "langsmith": {
+    "status": "CONNECTED",
+    "latencyMs": 699,
+    "projectExists": false,
+    "details": "Successfully connected and authenticated with LangSmith API"
+  },
+  "gemini": {
+    "status": "LIVE_SUCCESS",
+    "latencyMs": 4322,
+    "tokens": {
+      "inputTokens": 25,
+      "outputTokens": 19,
+      "totalTokens": 44
+    },
+    "payloadPreview": {
+      "status": "live_ok",
+      "provider": "gemini",
+      "message": "Gemini is live"
+    }
+  },
+  "openrouter": {
+    "status": "LIVE_FAILED",
+    "error": "API key expired."
+  },
+  "tools": {
+    "executed": 5,
+    "passed": 5,
+    "details": [
+      {
+        "tool": "get_interface_metrics",
+        "status": "PASS",
+        "itemCount": 1,
+        "samplePreview": [
+          "interfaceId",
+          "name",
+          "sourceSystem",
+          "targetSystem",
+          "healthStatus",
+          "pendingCount",
+          "retryAttempts",
+          "failedCount",
+          "successCount",
+          "oldestPendingAgeSeconds",
+          "lastCapturedAt",
+          "effectiveThresholds"
+        ]
+      },
+      {
+        "tool": "get_recent_snapshots",
+        "status": "PASS",
+        "itemCount": 1,
+        "samplePreview": [
+          "interfaceId",
+          "count",
+          "snapshots"
+        ]
+      },
+      {
+        "tool": "get_active_incidents",
+        "status": "PASS",
+        "itemCount": 1,
+        "samplePreview": [
+          "interfaceId",
+          "activeIncidentCount",
+          "incidents"
+        ]
+      },
+      {
+        "tool": "search_runbooks",
+        "status": "PASS",
+        "itemCount": 1,
+        "samplePreview": [
+          "query",
+          "resultCount",
+          "runbooks"
+        ]
+      },
+      {
+        "tool": "get_threshold_policy",
+        "status": "PASS",
+        "itemCount": 1,
+        "samplePreview": [
+          "interfaceId",
+          "effectivePolicy",
+          "isCustomOverride",
+          "readOnlyNotice"
+        ]
+      }
+    ]
+  },
+  "liveOrchestration": {
+    "status": "SUCCESS",
+    "latencyMs": 18606,
+    "provider": "Deterministic Runbook Grounding (Offline Mode)",
+    "aiAssisted": false,
+    "citedRunbooks": [],
+    "hypothesesCount": 0,
+    "checksCount": 1,
+    "summaryPreview": "Operational incident detected for rule [EXCESSIVE_RETRIES] with severity [Critical]. Review target endpoint health and r"
+  },
+  "resilience": {
+    "timeouts": "PASS",
+    "malformed": "PASS",
+    "missingKeys": "PASS"
+  },
+  "comparison": {
+    "legacyLatencyMs": 8463,
+    "langchainLatencyMs": 13941,
+    "legacyProvider": "LangChain Orchestrated (Google Gemini (gemini-3.1-flash-lite))",
+    "langchainProvider": "LangChain Orchestrated (Google Gemini (gemini-3.1-flash-lite))",
+    "bothValidSchemas": true,
+    "citedOverlap": [
+      null
+    ]
+  },
+  "redaction": {
+    "passed": true,
+    "violations": []
+  }
+}
