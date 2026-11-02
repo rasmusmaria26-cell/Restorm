@@ -225,6 +225,97 @@ describe('Authentication mode verification', () => {
             const decoded = Buffer.from(encoded, 'base64').toString();
             assert.equal(decoded, 'bob:', 'Default username bob with empty password');
         });
+
+        it('produces exactly "admin:" with no space before colon', () => {
+            // Simulate userSelect.value = "admin"
+            const originalGetElementById = global.document.getElementById;
+            let mockValue = 'admin';
+            global.document.getElementById = (id) => {
+                if (id === 'userSelect') {
+                    return { value: mockValue };
+                }
+                return originalGetElementById.call(global.document, id);
+            };
+            try {
+                const header = api.getAuthHeader();
+                const encoded = header.split(' ')[1];
+                const decoded = Buffer.from(encoded, 'base64').toString();
+                assert.equal(decoded, 'admin:', 'Username must be exactly "admin" with empty password, no space before colon');
+                assert.ok(!decoded.includes(' :'), 'No space allowed before colon in Basic auth credentials');
+            } finally {
+                global.document.getElementById = originalGetElementById;
+            }
+        });
+
+        it('trims whitespace from username', () => {
+            const originalGetElementById = global.document.getElementById;
+            global.document.getElementById = (id) => {
+                if (id === 'userSelect') {
+                    return { value: '  admin  ' };
+                }
+                return originalGetElementById.call(global.document, id);
+            };
+            try {
+                const header = api.getAuthHeader();
+                const encoded = header.split(' ')[1];
+                const decoded = Buffer.from(encoded, 'base64').toString();
+                assert.equal(decoded, 'admin:', 'Whitespace must be trimmed from username');
+            } finally {
+                global.document.getElementById = originalGetElementById;
+            }
+        });
+
+        it('handles empty username gracefully', () => {
+            const originalGetElementById = global.document.getElementById;
+            global.document.getElementById = (id) => {
+                if (id === 'userSelect') {
+                    return { value: '' };
+                }
+                return originalGetElementById.call(global.document, id);
+            };
+            try {
+                const header = api.getAuthHeader();
+                const encoded = header.split(' ')[1];
+                const decoded = Buffer.from(encoded, 'base64').toString();
+                assert.equal(decoded, ':', 'Empty username produces empty password Basic auth');
+            } finally {
+                global.document.getElementById = originalGetElementById;
+            }
+        });
     });
 
+    describe('CAP mocked authentication role mapping', () => {
+        const pkg = require('../../package.json');
+
+        it('admin has SimulatorAdmin role', () => {
+            const adminRoles = pkg.cds.requires.auth.users.admin.roles;
+            assert.ok(adminRoles.includes('SimulatorAdmin'), 'admin must have SimulatorAdmin role');
+            assert.ok(adminRoles.includes('SupportOperator'), 'admin must have SupportOperator role');
+            assert.ok(adminRoles.includes('SupportViewer'), 'admin must have SupportViewer role');
+        });
+
+        it('bob has SupportOperator and SupportViewer roles', () => {
+            const bobRoles = pkg.cds.requires.auth.users.bob.roles;
+            assert.ok(bobRoles.includes('SupportOperator'), 'bob must have SupportOperator role');
+            assert.ok(bobRoles.includes('SupportViewer'), 'bob must have SupportViewer role');
+            assert.ok(!bobRoles.includes('SimulatorAdmin'), 'bob must not have SimulatorAdmin role');
+        });
+
+        it('alice has SupportViewer role only', () => {
+            const aliceRoles = pkg.cds.requires.auth.users.alice.roles;
+            assert.ok(aliceRoles.includes('SupportViewer'), 'alice must have SupportViewer role');
+            assert.ok(!aliceRoles.includes('SupportOperator'), 'alice must not have SupportOperator role');
+            assert.ok(!aliceRoles.includes('SimulatorAdmin'), 'alice must not have SimulatorAdmin role');
+        });
+
+        it('production uses XSUAA exclusively', () => {
+            const prodAuth = pkg.cds.requires['[production]'].auth;
+            assert.equal(prodAuth.kind, 'xsuaa', 'Production must use XSUAA authentication');
+        });
+
+        it('development uses mocked authentication', () => {
+            const devAuth = pkg.cds.requires['[development]'].requires.auth;
+            assert.equal(devAuth.kind, 'mocked', 'Development must use mocked authentication');
+        });
+    });
 });

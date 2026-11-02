@@ -38,7 +38,7 @@ export const ENDPOINTS = {
  */
 export function getAuthHeader() {
     const userSelect = document.getElementById('userSelect');
-    const username = userSelect ? userSelect.value : 'bob';
+    const username = userSelect ? String(userSelect.value || '').trim() : 'bob';
     return 'Basic ' + btoa(username + ':');
 }
 
