@@ -1,0 +1,35 @@
+docs/design/TELEMETRY_ADAPTER_DESIGN.md:3: trailing whitespace.
+[32m+[m[32m**Project:** Retry Storm Sentinel (Restorm)[m[41m  [m
+docs/design/TELEMETRY_ADAPTER_DESIGN.md:4: trailing whitespace.
+[32m+[m[32m**Location:** `C:\Users\lumaa\OneDrive\Desktop\projects\Restorm`[m[41m  [m
+docs/design/TELEMETRY_ADAPTER_DESIGN.md:5: trailing whitespace.
+[32m+[m[32m**Document Version:** 1.0.0[m[41m  [m
+docs/design/TELEMETRY_ADAPTER_DESIGN.md:6: trailing whitespace.
+[32m+[m[32m**Status:** Approved Design Specification[m[41m  [m
+docs/phase5/PHASE5_BACKEND_AUDIT.md:3: trailing whitespace.
+[32m+[m[32m**Agent:** AGENT 1 — BACKEND AND ODATA SPECIALIST[m[41m  [m
+docs/phase5/PHASE5_BACKEND_AUDIT.md:4: trailing whitespace.
+[32m+[m[32m**Stage:** B — Foundation[m[41m  [m
+docs/phase5/PHASE5_BACKEND_AUDIT.md:5: trailing whitespace.
+[32m+[m[32m**Repository:** C:\Users\lumaa\OneDrive\Desktop\projects\Restorm[m[41m  [m
+docs/phase5/PHASE5_BACKEND_AUDIT.md:305: new blank line at EOF.
+docs/phase5/PHASE5_QA_REPORT.md:3: trailing whitespace.
+[32m+[m[32m**Project:** Restorm — Retry Storm Sentinel[m[41m  [m
+docs/phase5/PHASE5_QA_REPORT.md:4: trailing whitespace.
+[32m+[m[32m**Agent:** AGENT 6 — QA, Security and E2E Specialist[m[41m  [m
+docs/phase5/PHASE5_QA_REPORT.md:5: trailing whitespace.
+[32m+[m[32m**Current Task:** Independent QA execution (Stage D)[m[41m  [m
+docs/phase5/PHASE5_QA_REPORT.md:6: trailing whitespace.
+[32m+[m[32m**Dependencies:** Agents 1–5 completed work[m[41m  [m
+docs/phase5/PHASE5_QA_REPORT.md:7: trailing whitespace.
+[32m+[m[32m**Blockers:** None[m[41m  [m
+docs/reports/DETECTION_QUALITY_REPORT.md:3: trailing whitespace.
+[32m+[m[32m**Project:** Retry Storm Sentinel (Restorm)[m[41m  [m
+docs/reports/DETECTION_QUALITY_REPORT.md:4: trailing whitespace.
+[32m+[m[32m**Location:** `C:\Users\lumaa\OneDrive\Desktop\projects\Restorm`[m[41m  [m
+docs/reports/DETECTION_QUALITY_REPORT.md:5: trailing whitespace.
+[32m+[m[32m**Evaluation Date:** October 29, 2026[m[41m  [m
+docs/reports/DETECTION_QUALITY_REPORT.md:6: trailing whitespace.
+[32m+[m[32m**Test Runner:** Node.js Native Test Runner (`node --test`)[m[41m  [m
+docs/reports/DETECTION_QUALITY_REPORT.md:7: trailing whitespace.
+[32m+[m[32m**Evaluator Script:** `scripts/rag-eval.js`[m[41m  [m

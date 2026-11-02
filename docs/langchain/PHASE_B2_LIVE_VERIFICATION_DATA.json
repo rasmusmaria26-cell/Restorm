@@ -1,0 +1,126 @@
+{
+  "langsmith": {
+    "status": "CONNECTED",
+    "latencyMs": 591,
+    "project": "restorm-ai-development",
+    "projectId": "eba1540e-aec9-47a8-a374-f2638d202a0f",
+    "rootRunId": "01a18cce-80c9-7000-8000-015ea1b90bc5",
+    "childRunId": "01a18cce-80cf-7000-8000-02af413bad53",
+    "details": "Successfully authenticated, resolved project, and ingested root + child trace runs."
+  },
+  "gemini": {
+    "status": "LIVE_SUCCESS",
+    "model": "Google Gemini (gemini-3.1-flash-lite)",
+    "latencyMs": 1091,
+    "tokens": {
+      "inputTokens": 25,
+      "outputTokens": 19,
+      "totalTokens": 44
+    },
+    "payloadPreview": {
+      "status": "live_ok",
+      "provider": "gemini",
+      "message": "Gemini is live"
+    }
+  },
+  "openrouter": {
+    "status": "LIVE_FAILED",
+    "error": "API key expired."
+  },
+  "tools": {
+    "executed": 5,
+    "passed": 5,
+    "details": [
+      {
+        "tool": "get_interface_metrics",
+        "status": "PASS",
+        "itemCount": 1,
+        "samplePreview": [
+          "interfaceId",
+          "name",
+          "sourceSystem",
+          "targetSystem",
+          "healthStatus",
+          "pendingCount",
+          "retryAttempts",
+          "failedCount",
+          "successCount",
+          "oldestPendingAgeSeconds",
+          "lastCapturedAt",
+          "effectiveThresholds"
+        ]
+      },
+      {
+        "tool": "get_recent_snapshots",
+        "status": "PASS",
+        "itemCount": 1,
+        "samplePreview": [
+          "interfaceId",
+          "count",
+          "snapshots"
+        ]
+      },
+      {
+        "tool": "get_active_incidents",
+        "status": "PASS",
+        "itemCount": 1,
+        "samplePreview": [
+          "interfaceId",
+          "activeIncidentCount",
+          "incidents"
+        ]
+      },
+      {
+        "tool": "search_runbooks",
+        "status": "PASS",
+        "itemCount": 1,
+        "samplePreview": [
+          "query",
+          "resultCount",
+          "runbooks"
+        ]
+      },
+      {
+        "tool": "get_threshold_policy",
+        "status": "PASS",
+        "itemCount": 1,
+        "samplePreview": [
+          "interfaceId",
+          "effectivePolicy",
+          "isCustomOverride",
+          "readOnlyNotice"
+        ]
+      }
+    ]
+  },
+  "liveOrchestration": {
+    "status": "SUCCESS",
+    "latencyMs": 6069,
+    "provider": "LangChain Orchestrated (Google Gemini (gemini-3.1-flash-lite))",
+    "aiAssisted": true,
+    "citedRunbooks": [],
+    "hypothesesCount": 2,
+    "checksCount": 3,
+    "summaryPreview": "The interface 'Order Inbound (S/4HANA)' triggered an EXCESSIVE_RETRIES alert, though current metrics show a healthy state with no active ret",
+    "outputValid": true
+  },
+  "resilience": {
+    "timeouts": "PASS",
+    "malformed": "PASS",
+    "missingKeys": "PASS"
+  },
+  "comparison": {
+    "legacyLatencyMs": 2772,
+    "langchainLatencyMs": 7500,
+    "legacyProvider": "Google Gemini (gemini-3.1-flash-lite)",
+    "langchainProvider": "LangChain Orchestrated (Google Gemini (gemini-3.1-flash-lite))",
+    "legacyValid": true,
+    "langchainValid": true,
+    "bothValidSchemas": true,
+    "citedOverlap": []
+  },
+  "redaction": {
+    "passed": true,
+    "violations": []
+  }
+}
