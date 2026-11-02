@@ -1,0 +1,52 @@
+/**
+ * Design tokens for Retry Storm Sentinel.
+ * Centralized CSS custom properties (colors, typography, spacing, borders,
+ * z-index). Extracted from the original app/index.html :root block.
+ *
+ * All components reference these tokens; changing a token here updates the
+ * entire design system consistently.
+ */
+
+/* ---------- Calm control-room palette ---------- */
+:root {
+    --color-mist: #EDF1F4;
+    --color-ink: #17212B;
+    --color-slate: #5B6B7A;
+    --color-harbor: #1F5FBF;
+    --color-harbor-hover: #174EA6;
+    --color-critical: #D93A2F;
+    --color-critical-text: #C62E24;
+    --color-critical-badge-text: #9C1F17;
+    --color-critical-badge-bg: #FBE3E0;
+    --color-high: #E08A00;
+    --color-high-badge-text: #7A4A00;
+    --color-high-badge-bg: #FCEFD9;
+    --color-healthy: #2E8B6A;
+    --color-healthy-text: #1F7A5A;
+    --color-healthy-badge-bg: #E1F4EC;
+    --color-divider: #D5DDE4;
+    --color-divider-light: #E4EAEF;
+    --color-disabled-bg: #E1E7EC;
+    --color-disabled-text: #6B7886;
+    --color-card-bg: #FFFFFF;
+    --color-card-muted-bg: #F7FAFC;
+    --color-focus-ring: rgba(31, 95, 191, 0.35);
+
+    /* ---------- Typography ---------- */
+    --font-display: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-body: 'Public Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+    /* ---------- Spacing & borders ---------- */
+    --border-radius-lg: 8px;
+    --border-radius-sm: 4px;
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+
+    /* ---------- Z-index stack ---------- */
+    --z-sidebar: 200;
+    --z-sidebar-overlay: 150;
+    --z-drawer: 1000;
+    --z-modal: 1000;
+}

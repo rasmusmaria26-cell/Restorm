@@ -33,3 +33,17 @@ Thumbs.db
 
 # VS Code
 .vscode/settings.json
+
+# Temporary test results
+test-results/
+
+# Local AI agent / OpenCode worktree data
+.claude/
+
+# Local-only security and audit reports (not for publication)
+local-only/
+
+# Internal security audit reports
+SECURITY_STAGE_*.md
+RESTORM_FINAL_*REPORT.md
+Restorm-Security-Audit-Report.*

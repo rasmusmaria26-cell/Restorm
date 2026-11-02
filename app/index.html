@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self';">
+        content="default-src 'self'; script-src 'self'; font-src 'self' https://fonts.gstatic.com; style-src 'self' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self';">
     <title>Retry Storm Sentinel | Operational Backlog Monitor</title>
 
     <!-- Google Fonts with system sans-serif fallback -->
@@ -15,1211 +15,31 @@
         href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Public+Sans:wght@400;500;600&display=swap"
         rel="stylesheet">
 
-    <style>
-        :root {
-            /* Calm control-room palette */
-            --color-mist: #EDF1F4;
-            --color-ink: #17212B;
-            --color-slate: #5B6B7A;
-            --color-harbor: #1F5FBF;
-            --color-harbor-hover: #174EA6;
-            --color-critical: #D93A2F;
-            --color-critical-text: #C62E24;
-            --color-critical-badge-text: #9C1F17;
-            --color-critical-badge-bg: #FBE3E0;
-            --color-high: #E08A00;
-            --color-high-badge-text: #7A4A00;
-            --color-high-badge-bg: #FCEFD9;
-            --color-healthy: #2E8B6A;
-            --color-healthy-text: #1F7A5A;
-            --color-healthy-badge-bg: #E1F4EC;
-            --color-divider: #D5DDE4;
-            --color-divider-light: #E4EAEF;
-            --color-disabled-bg: #E1E7EC;
-            --color-disabled-text: #6B7886;
-            --color-card-bg: #FFFFFF;
-            --color-card-muted-bg: #F7FAFC;
-            --color-focus-ring: rgba(31, 95, 191, 0.35);
-
-            /* Typography */
-            --font-display: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            --font-body: 'Public Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: var(--color-mist);
-            color: var(--color-ink);
-            font-family: var(--font-body);
-            font-size: 0.9375rem;
-            line-height: 1.5;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        /* Tabular numbers for all counts, ages and timestamps */
-        .tabular-nums,
-        .metric-value,
-        .metric-label,
-        .pressure-caption,
-        .evidence-line,
-        .time-tag {
-            font-variant-numeric: tabular-nums;
-        }
-
-        /* Accessibility focus outline */
-        button:focus-visible,
-        select:focus-visible,
-        a:focus-visible {
-            outline: 2px solid var(--color-harbor);
-            outline-offset: 2px;
-        }
-
-        /* Top Bar */
-        .top-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 14px 28px;
-            background-color: var(--color-card-bg);
-            border-bottom: 1px solid var(--color-divider);
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-
-        .brand-container {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .brand-title {
-            font-family: var(--font-display);
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: var(--color-ink);
-            margin: 0;
-            letter-spacing: -0.01em;
-        }
-
-        .brand-subtitle {
-            font-size: 0.8125rem;
-            color: var(--color-slate);
-            margin: 0;
-        }
-
-        .top-bar-controls {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        }
-
-        .simulated-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 3px 10px;
-            border-radius: 9999px;
-            background-color: var(--color-mist);
-            color: var(--color-slate);
-            font-size: 0.75rem;
-            font-weight: 500;
-            border: 1px solid var(--color-divider);
-        }
-
-        .simulated-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background-color: var(--color-slate);
-        }
-
-        .user-menu-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.8125rem;
-            color: var(--color-slate);
-        }
-
-        .user-select {
-            font-family: var(--font-body);
-            font-size: 0.8125rem;
-            color: var(--color-ink);
-            background-color: var(--color-card-bg);
-            border: 1px solid var(--color-divider);
-            padding: 5px 10px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: border-color 0.15s ease;
-        }
-
-        .user-select:hover {
-            border-color: var(--color-harbor);
-        }
-
-        .user-role-badge {
-            font-size: 0.75rem;
-            padding: 3px 8px;
-            border-radius: 4px;
-            background-color: var(--color-mist);
-            color: var(--color-slate);
-            border: 1px solid var(--color-divider-light);
-        }
-
-        /* Page Container */
-        .page-container {
-            max-width: 1360px;
-            margin: 0 auto;
-            padding: 24px 28px 48px;
-            display: flex;
-            flex-direction: column;
-            gap: 24px;
-        }
-
-        /* Headline Section */
-        .headline-card {
-            background-color: var(--color-card-bg);
-            border: 1px solid var(--color-divider);
-            border-radius: 8px;
-            padding: 18px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            border-left: 4px solid var(--color-healthy);
-            transition: border-color 0.2s ease;
-        }
-
-        .headline-card.is-critical {
-            border-left-color: var(--color-critical);
-        }
-
-        .headline-card.is-high {
-            border-left-color: var(--color-high);
-        }
-
-        .headline-content {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .headline-title {
-            font-family: var(--font-display);
-            font-size: 1.375rem;
-            font-weight: 600;
-            color: var(--color-ink);
-            margin: 0;
-            line-height: 1.3;
-        }
-
-        .headline-subtitle {
-            font-size: 0.875rem;
-            color: var(--color-slate);
-            margin: 0;
-        }
-
-        .headline-actions {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-shrink: 0;
-        }
-
-        .last-updated-text {
-            font-size: 0.75rem;
-            color: var(--color-slate);
-        }
-
-        /* Main 2-Column Board */
-        .control-board-grid {
-            display: grid;
-            grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.05fr);
-            gap: 24px;
-            align-items: start;
-        }
-
-        @media (max-width: 960px) {
-            .control-board-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .board-column {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .column-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding-bottom: 4px;
-        }
-
-        .column-title {
-            font-family: var(--font-display);
-            font-size: 1.0625rem;
-            font-weight: 600;
-            color: var(--color-ink);
-            margin: 0;
-        }
-
-        .column-count {
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 2px 8px;
-            border-radius: 9999px;
-            background-color: var(--color-card-bg);
-            color: var(--color-slate);
-            border: 1px solid var(--color-divider);
-        }
-
-        .column-count.has-attention {
-            background-color: var(--color-critical-badge-bg);
-            color: var(--color-critical-badge-text);
-            border-color: transparent;
-        }
-
-        /* Interface Card */
-        .interface-card {
-            background-color: var(--color-card-bg);
-            border: 1px solid var(--color-divider);
-            border-radius: 8px;
-            padding: 16px 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            transition: box-shadow 0.15s ease, border-color 0.15s ease;
-        }
-
-        .interface-card:hover {
-            border-color: var(--color-slate);
-            box-shadow: 0 2px 6px rgba(23, 33, 43, 0.04);
-        }
-
-        .interface-card.has-alert {
-            border-left: 3px solid var(--color-critical);
-        }
-
-        .interface-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 12px;
-        }
-
-        .interface-title-group {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .interface-name {
-            font-family: var(--font-display);
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--color-ink);
-            margin: 0;
-        }
-
-        .interface-path {
-            font-size: 0.8125rem;
-            color: var(--color-slate);
-        }
-
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.75rem;
-            font-weight: 500;
-            padding: 2px 8px;
-            border-radius: 4px;
-            flex-shrink: 0;
-        }
-
-        .status-badge.healthy {
-            background-color: var(--color-healthy-badge-bg);
-            color: var(--color-healthy-text);
-        }
-
-        .status-badge.critical {
-            background-color: var(--color-critical-badge-bg);
-            color: var(--color-critical-badge-text);
-        }
-
-        .status-badge.high {
-            background-color: var(--color-high-badge-bg);
-            color: var(--color-high-badge-text);
-        }
-
-        .status-dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-        }
-
-        .status-badge.healthy .status-dot {
-            background-color: var(--color-healthy);
-        }
-
-        .status-badge.critical .status-dot {
-            background-color: var(--color-critical);
-        }
-
-        .status-badge.high .status-dot {
-            background-color: var(--color-high);
-        }
-
-        /* Pressure Visualization */
-        .pressure-block {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background-color: var(--color-mist);
-            border: 1px solid var(--color-divider-light);
-            border-radius: 6px;
-            padding: 8px 14px;
-            gap: 16px;
-        }
-
-        .pressure-sparkline-wrap {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            flex: 1;
-            min-width: 180px;
-        }
-
-        .sparkline-svg {
-            width: 100%;
-            height: 42px;
-            display: block;
-            overflow: visible;
-        }
-
-        .pressure-summary {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-
-        .pressure-count {
-            font-size: 1.125rem;
-            font-weight: 600;
-            color: var(--color-ink);
-            line-height: 1.2;
-        }
-
-        .pressure-count.is-over-limit {
-            color: var(--color-critical-text);
-        }
-
-        .pressure-count-label {
-            font-size: 0.6875rem;
-            color: var(--color-slate);
-            text-transform: lowercase;
-        }
-
-        .interface-footer-caption {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.75rem;
-            color: var(--color-slate);
-            border-top: 1px solid var(--color-divider-light);
-            padding-top: 8px;
-        }
-
-        /* Needs Attention / Alerts Cards */
-        .alert-card {
-            background-color: var(--color-card-bg);
-            border: 1px solid var(--color-divider);
-            border-radius: 8px;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            transition: opacity 0.2s ease, border-color 0.2s ease;
-        }
-
-        .alert-card.is-critical {
-            border-top: 3px solid var(--color-critical);
-        }
-
-        .alert-card.is-high {
-            border-top: 3px solid var(--color-high);
-        }
-
-        .alert-card.is-acknowledged {
-            opacity: 0.68;
-            background-color: var(--color-card-muted-bg);
-            border-color: var(--color-divider-light);
-        }
-
-        .alert-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 8px;
-        }
-
-        .alert-titles-wrap {
-            display: flex;
-            flex-direction: column;
-            gap: 1px;
-        }
-
-        .alert-friendly-title {
-            font-family: var(--font-display);
-            font-size: 0.9375rem;
-            font-weight: 600;
-            color: var(--color-ink);
-            margin: 0;
-        }
-
-        .alert-rule-subcode {
-            font-size: 0.6875rem;
-            color: var(--color-slate);
-            font-family: monospace;
-        }
-
-        .alert-interface-tag {
-            font-size: 0.75rem;
-            color: var(--color-slate);
-            font-weight: 500;
-        }
-
-        .evidence-line {
-            font-size: 0.8125rem;
-            color: var(--color-ink);
-            background-color: var(--color-mist);
-            padding: 6px 10px;
-            border-radius: 4px;
-            border-left: 2px solid var(--color-divider);
-        }
-
-        .incident-meta-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 0.75rem;
-            color: var(--color-slate);
-            flex-wrap: wrap;
-            gap: 6px;
-        }
-
-        .ongoing-incident-tag {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            font-weight: 500;
-            color: var(--color-ink);
-        }
-
-        .ack-stamp {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            font-size: 0.75rem;
-            color: var(--color-healthy-text);
-            background-color: var(--color-healthy-badge-bg);
-            padding: 2px 6px;
-            border-radius: 4px;
-        }
-
-        .alert-actions-row {
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 8px;
-            padding-top: 4px;
-        }
-
-        /* Buttons */
-        .btn-harbor {
-            font-family: var(--font-body);
-            font-size: 0.8125rem;
-            font-weight: 500;
-            background-color: var(--color-harbor);
-            color: #FFFFFF;
-            border: 1px solid var(--color-harbor);
-            padding: 6px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.15s ease, border-color 0.15s ease;
-        }
-
-        .btn-harbor:hover:not(:disabled) {
-            background-color: var(--color-harbor-hover);
-            border-color: var(--color-harbor-hover);
-        }
-
-        .btn-quiet {
-            font-family: var(--font-body);
-            font-size: 0.8125rem;
-            font-weight: 500;
-            background-color: transparent;
-            color: var(--color-ink);
-            border: 1px solid var(--color-divider);
-            padding: 6px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.15s ease, border-color 0.15s ease;
-        }
-
-        .btn-quiet:hover:not(:disabled) {
-            background-color: var(--color-mist);
-            border-color: var(--color-slate);
-        }
-
-        .btn-disabled,
-        button:disabled {
-            background-color: var(--color-disabled-bg) !important;
-            color: var(--color-disabled-text) !important;
-            border-color: var(--color-divider) !important;
-            cursor: not-allowed !important;
-            box-shadow: none !important;
-        }
-
-        /* Empty state card */
-        .empty-card {
-            background-color: var(--color-card-bg);
-            border: 1px dashed var(--color-divider);
-            border-radius: 8px;
-            padding: 32px 20px;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .empty-card-title {
-            font-family: var(--font-display);
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--color-ink);
-            margin: 0;
-        }
-
-        .empty-card-subtitle {
-            font-size: 0.8125rem;
-            color: var(--color-slate);
-            margin: 0;
-            max-width: 320px;
-        }
-
-        /* Explain Side Panel (Drawer) */
-        .drawer-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background-color: rgba(23, 33, 43, 0.4);
-            backdrop-filter: blur(2px);
-            z-index: 1000;
-            justify-content: flex-end;
-        }
-
-        .drawer-overlay.is-open {
-            display: flex;
-        }
-
-        .drawer-panel {
-            background-color: var(--color-card-bg);
-            width: 100%;
-            max-width: 540px;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            box-shadow: -8px 0 24px rgba(23, 33, 43, 0.12);
-            border-left: 1px solid var(--color-divider);
-            animation: slideIn 0.2s ease-out;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-            }
-
-            to {
-                transform: translateX(0);
-            }
-        }
-
-        .drawer-header {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            padding: 20px 24px;
-            border-bottom: 1px solid var(--color-divider);
-        }
-
-        .drawer-header-text {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .drawer-title {
-            font-family: var(--font-display);
-            font-size: 1.1875rem;
-            font-weight: 700;
-            color: var(--color-ink);
-            margin: 0;
-        }
-
-        .drawer-subtitle {
-            font-size: 0.8125rem;
-            color: var(--color-slate);
-            margin: 0;
-        }
-
-        .drawer-close-btn {
-            background: transparent;
-            border: none;
-            color: var(--color-slate);
-            font-size: 1.5rem;
-            line-height: 1;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        .drawer-close-btn:hover {
-            color: var(--color-ink);
-            background-color: var(--color-mist);
-        }
-
-        .drawer-body {
-            padding: 24px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            font-size: 0.875rem;
-        }
-
-        .ai-provider-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 6px 12px;
-            border-radius: 6px;
-            align-self: flex-start;
-        }
-
-        .ai-provider-badge.is-gemini {
-            background-color: #EEF4FF;
-            color: #1F5FBF;
-            border: 1px solid #BFD7FE;
-        }
-
-        .ai-provider-badge.is-fallback {
-            background-color: var(--color-mist);
-            color: var(--color-slate);
-            border: 1px solid var(--color-divider);
-        }
-
-        .drawer-section-title {
-            font-family: var(--font-display);
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: var(--color-ink);
-            margin: 0 0 8px 0;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .facts-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-            gap: 10px;
-        }
-
-        .fact-card {
-            background-color: var(--color-mist);
-            border: 1px solid var(--color-divider-light);
-            border-radius: 6px;
-            padding: 10px 12px;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .fact-name {
-            font-size: 0.6875rem;
-            color: var(--color-slate);
-        }
-
-        .fact-val {
-            font-size: 1.125rem;
-            font-weight: 600;
-            color: var(--color-ink);
-        }
-
-        .drawer-list {
-            margin: 0;
-            padding-left: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            color: var(--color-ink);
-        }
-
-        .runbook-badge-item {
-            display: inline-block;
-            background-color: var(--color-mist);
-            color: var(--color-harbor);
-            border: 1px solid var(--color-divider);
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-right: 6px;
-        }
-
-        .limitations-callout {
-            background-color: var(--color-card-muted-bg);
-            border: 1px solid var(--color-divider);
-            border-left: 3px solid var(--color-high);
-            border-radius: 6px;
-            padding: 12px 14px;
-            font-size: 0.8125rem;
-            color: var(--color-slate);
-            line-height: 1.45;
-        }
-
-        .drawer-footer {
-            padding: 16px 24px;
-            border-top: 1px solid var(--color-divider);
-            display: flex;
-            justify-content: flex-end;
-            background-color: var(--color-card-muted-bg);
-        }
-
-        /* Test Scenarios Footer Strip */
-        .scenarios-footer-strip {
-            margin-top: 24px;
-            background-color: var(--color-card-bg);
-            border: 1px solid var(--color-divider);
-            border-radius: 8px;
-            padding: 20px 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-        }
-
-        .scenarios-header-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
-        .scenarios-title-wrap {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .scenarios-title {
-            font-family: var(--font-display);
-            font-size: 0.9375rem;
-            font-weight: 600;
-            color: var(--color-ink);
-            margin: 0;
-        }
-
-        .scenarios-subline {
-            font-size: 0.8125rem;
-            color: var(--color-slate);
-            margin: 0;
-        }
-
-        .scenarios-role-hint {
-            font-size: 0.75rem;
-            color: var(--color-slate);
-            padding: 4px 10px;
-            border-radius: 4px;
-            background-color: var(--color-mist);
-            border: 1px solid var(--color-divider-light);
-        }
-
-        .scenarios-role-hint.is-viewer {
-            color: var(--color-high-badge-text);
-            background-color: var(--color-high-badge-bg);
-            border-color: transparent;
-        }
-
-        .scenarios-buttons-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .btn-scenario {
-            font-family: var(--font-body);
-            font-size: 0.8125rem;
-            font-weight: 500;
-            padding: 6px 12px;
-            border-radius: 6px;
-            border: 1px solid var(--color-divider);
-            background-color: var(--color-mist);
-            color: var(--color-ink);
-            cursor: pointer;
-            transition: background-color 0.15s ease, border-color 0.15s ease;
-        }
-
-        .btn-scenario:hover:not(:disabled) {
-            background-color: #E2E8EE;
-            border-color: var(--color-slate);
-        }
-
-        .scenario-feedback-bar {
-            font-size: 0.8125rem;
-            color: var(--color-slate);
-            padding-top: 4px;
-            min-height: 1.25rem;
-        }
-
-        .scenario-feedback-bar.has-error {
-            color: var(--color-critical-text);
-        }
-
-        .scenario-feedback-bar.has-success {
-            color: var(--color-healthy-text);
-        }
-
-        /* Live NOC Stream Toggle Button */
-        .live-stream-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            padding: 5px 12px;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            background-color: var(--color-card-bg);
-            border: 1px solid var(--color-divider);
-            color: var(--color-slate);
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .live-stream-btn:hover {
-            border-color: var(--color-slate);
-            background-color: var(--color-mist);
-        }
-
-        .live-stream-btn.is-active {
-            background-color: #E6F4EA;
-            border-color: #CEEAD6;
-            color: #137333;
-        }
-
-        .live-indicator-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: var(--color-slate);
-            transition: background-color 0.2s ease;
-        }
-
-        .live-stream-btn.is-active .live-indicator-dot {
-            background-color: #1E8E3E;
-            animation: live-pulse 1.8s infinite ease-in-out;
-        }
-
-        @keyframes live-pulse {
-            0% {
-                transform: scale(0.95);
-                box-shadow: 0 0 0 0 rgba(30, 142, 62, 0.7);
-            }
-            70% {
-                transform: scale(1.15);
-                box-shadow: 0 0 0 6px rgba(30, 142, 62, 0);
-            }
-            100% {
-                transform: scale(0.95);
-                box-shadow: 0 0 0 0 rgba(30, 142, 62, 0);
-            }
-        }
-
-        /* Resolve Action Button */
-        .btn-healthy {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background-color: var(--color-healthy);
-            color: #FFFFFF;
-            font-family: var(--font-body);
-            font-size: 0.8125rem;
-            font-weight: 500;
-            padding: 6px 14px;
-            border-radius: 6px;
-            border: 1px solid transparent;
-            cursor: pointer;
-            transition: background-color 0.15s ease, opacity 0.15s ease;
-        }
-
-        .btn-healthy:hover:not(:disabled) {
-            background-color: #247357;
-        }
-
-        .btn-healthy:disabled {
-            background-color: var(--color-disabled-bg);
-            color: var(--color-disabled-text);
-            cursor: not-allowed;
-            border-color: var(--color-divider);
-        }
-
-        /* Reset Button */
-        .btn-scenario.btn-reset {
-            margin-left: auto;
-            border-color: #E0B3B0;
-            color: #8C2018;
-            background-color: #FFF7F6;
-        }
-
-        .btn-scenario.btn-reset:hover:not(:disabled) {
-            background-color: #FCE8E6;
-            border-color: var(--color-critical);
-        }
-
-        /* AI Provider Badge in Drawer */
-        .ai-provider-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 6px 12px;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            border: 1px solid transparent;
-        }
-
-        .ai-provider-badge.is-gemini {
-            background-color: #E8F0FE;
-            color: #1967D2;
-            border-color: #D2E3FC;
-        }
-
-        .ai-provider-badge.is-fallback {
-            background-color: #F1F3F4;
-            color: var(--color-slate);
-            border-color: var(--color-divider);
-        }
-
-        /* Resolved Stamp */
-        .resolved-tag {
-            font-size: 0.6875rem;
-            font-weight: 600;
-            padding: 2px 8px;
-            border-radius: 4px;
-            background-color: #E6F4EA;
-            color: #137333;
-            border: 1px solid #CEEAD6;
-        }
-
-        /* View Toggle Group (Phase 4) */
-        .view-toggle-group {
-            background-color: var(--color-mist);
-            border: 1px solid var(--color-divider);
-            border-radius: 6px;
-            padding: 2px;
-            display: inline-flex;
-            gap: 2px;
-        }
-
-        .view-toggle-btn {
-            font-family: var(--font-body);
-            border: none;
-            background: transparent;
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 500;
-            color: var(--color-slate);
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-
-        .view-toggle-btn:hover:not(.is-active) {
-            color: var(--color-ink);
-        }
-
-        .view-toggle-btn.is-active {
-            background-color: var(--color-card-bg);
-            color: var(--color-ink);
-            font-weight: 600;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-        }
-
-        /* Filter Banner */
-        .topology-filter-banner {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background-color: #E8F0FE;
-            border: 1px solid #D2E3FC;
-            border-radius: 6px;
-            padding: 8px 14px;
-            font-size: 0.8125rem;
-            color: #1967D2;
-        }
-
-        .topology-filter-text {
-            font-weight: 500;
-        }
-
-        /* Topology Wrapper */
-        .topology-wrapper {
-            background-color: var(--color-card-bg);
-            border: 1px solid var(--color-divider);
-            border-radius: 8px;
-            padding: 16px 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .topology-summary-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 8px;
-            font-size: 0.75rem;
-            color: var(--color-slate);
-            border-bottom: 1px solid var(--color-divider-light);
-            padding-bottom: 10px;
-        }
-
-        .topology-pills-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .topology-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.6875rem;
-            font-weight: 600;
-        }
-
-        .topology-pill.is-healthy {
-            background-color: var(--color-healthy-badge-bg);
-            color: var(--color-healthy-text);
-        }
-
-        .topology-pill.is-warning {
-            background-color: var(--color-high-badge-bg);
-            color: var(--color-high-badge-text);
-        }
-
-        .topology-pill.is-critical {
-            background-color: var(--color-critical-badge-bg);
-            color: var(--color-critical-badge-text);
-        }
-
-        .topology-svg-container {
-            width: 100%;
-            overflow-x: auto;
-        }
-
-        .topology-svg {
-            display: block;
-            width: 100%;
-            min-width: 520px;
-            height: auto;
-        }
-
-        /* SVG Graph Classes */
-        .topo-node {
-            cursor: pointer;
-            transition: transform 0.15s ease;
-        }
-
-        .topo-node:hover .topo-node-rect {
-            stroke: var(--color-harbor);
-            stroke-width: 2;
-        }
-
-        .topo-node.is-selected .topo-node-rect {
-            stroke: var(--color-harbor);
-            stroke-width: 2.5;
-            filter: drop-shadow(0 0 6px rgba(31, 95, 191, 0.3));
-        }
-
-        .topo-edge {
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .topo-edge:hover .topo-edge-line {
-            stroke-width: 3.5;
-        }
-
-        .topo-edge.is-selected .topo-edge-line {
-            stroke-width: 4;
-            filter: drop-shadow(0 0 4px rgba(31, 95, 191, 0.4));
-        }
-
-        @keyframes flow-dash {
-            to {
-                stroke-dashoffset: -20;
-            }
-        }
-
-        .topo-edge.is-critical .topo-edge-line {
-            stroke-dasharray: 6 3;
-            animation: flow-dash 1s linear infinite;
-        }
-    </style>
+    <!-- Design system -->
+    <link rel="stylesheet" href="css/design-tokens.css">
+    <link rel="stylesheet" href="css/components.css">
 </head>
 
 <body>
 
-    <!-- Slim Top Bar -->
-    <header class="top-bar">
-        <div class="brand-container">
-            <h1 class="brand-title">Retry Storm Sentinel</h1>
-            <p class="brand-subtitle">Simulated integration backlog and retry monitor</p>
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="brand-container">
+                <h1 class="brand-title">Retry Storm Sentinel</h1>
+                <p class="brand-subtitle">Simulated integration backlog and retry monitor</p>
+            </div>
         </div>
-        <div class="top-bar-controls">
-            <!-- Live NOC Auto-Simulation Toggle -->
-            <button id="liveStreamToggle" class="live-stream-btn" type="button" aria-pressed="false" title="Toggle automatic live simulation stream">
-                <span class="live-indicator-dot"></span>
-                <span id="liveStreamLabel">Live stream: OFF</span>
-            </button>
-            <span class="simulated-pill">
-                <span class="simulated-dot"></span>
-                Simulated data
-            </span>
+        <nav class="sidebar-nav">
+            <a href="#" class="sidebar-item is-active" data-route="">Overview</a>
+            <a href="#" class="sidebar-item" data-route="interfaces">Interface Inventory</a>
+            <a href="#" class="sidebar-item" data-route="topology">Topology</a>
+            <a href="#" class="sidebar-item" data-route="incidents">Incidents</a>
+            <a href="#" class="sidebar-item" data-route="thresholds">Thresholds</a>
+        </nav>
+        <div class="sidebar-footer">
             <div class="user-menu-wrapper">
-                <label for="userSelect">Operator:</label>
+                <label for="userSelect" class="label-sm">Active Operator:</label>
                 <select id="userSelect" class="user-select" aria-label="Select active user role">
                     <option value="bob" selected>Bob (Support operator)</option>
                     <option value="alice">Alice (Support viewer)</option>
@@ -1228,119 +48,75 @@
                 <span id="roleCapsBadge" class="user-role-badge">Can acknowledge & simulate</span>
             </div>
         </div>
-    </header>
+    </aside>
 
-    <!-- Main Content Container -->
-    <main class="page-container">
-
-        <!-- Plain-English Headline Sentence Banner -->
-        <section id="headlineCard" class="headline-card" aria-live="polite">
-            <div class="headline-content">
-                <h2 id="headlineTitle" class="headline-title">Checking interface queues...</h2>
-                <p id="headlineSubtitle" class="headline-subtitle">Connecting to monitoring service...</p>
+    <!-- Main Shell: Header + Page Outlet + Scenario Controls -->
+    <div class="main-shell">
+        <header class="top-bar">
+            <div class="flex-row-gap-12">
+                <button class="menu-toggle" id="menuToggle" type="button" aria-label="Toggle navigation menu" aria-expanded="false">
+                    ☰ Menu
+                </button>
+                <div class="brand-container" id="topBrand">
+                    <h1 class="brand-title brand-title-sm">Retry Storm Sentinel</h1>
+                    <p class="brand-subtitle">Simulated integration backlog and retry monitor</p>
+                </div>
             </div>
-            <div class="headline-actions">
-                <span id="lastUpdatedText" class="last-updated-text tabular-nums"></span>
-                <button id="btnRefreshTop" class="btn-quiet" type="button"
-                    aria-label="Refresh operational data">Refresh</button>
+            <div class="top-bar-controls">
+                <button id="liveStreamToggle" class="live-stream-btn" type="button" aria-pressed="false" title="Toggle automatic live simulation stream">
+                    <span class="live-indicator-dot"></span>
+                    <span id="liveStreamLabel">Live stream: OFF</span>
+                </button>
+                <span class="simulated-pill">
+                    <span class="simulated-dot"></span>
+                    Simulated data
+                </span>
+                <button id="btnRefreshTop" class="btn-quiet" type="button" aria-label="Refresh operational data">Refresh</button>
             </div>
-        </section>
+        </header>
 
-        <!-- Two Columns Layout: Left = Interfaces (wide), Right = Needs Attention (narrow) -->
-        <div class="control-board-grid">
-
-            <!-- Left Column: Interfaces & Landscape Topology -->
-            <section class="board-column" aria-labelledby="interfacesColTitle">
-                <div class="column-header">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <h3 id="interfacesColTitle" class="column-title">Monitored interfaces</h3>
-                        <span id="interfacesCount" class="column-count tabular-nums">0</span>
-                    </div>
-                    <!-- View Mode Toggle: Cards vs Topology Map -->
-                    <div class="view-toggle-group" role="tablist" aria-label="Interface landscape view mode">
-                        <button id="viewToggleCards" class="view-toggle-btn is-active" type="button" role="tab" aria-selected="true" title="View interface queue metric cards">Cards</button>
-                        <button id="viewToggleTopology" class="view-toggle-btn" type="button" role="tab" aria-selected="false" title="View integration architecture topology map">Topology map</button>
-                    </div>
-                </div>
-
-                <!-- Active Topology Filter Banner -->
-                <div id="topologyFilterBanner" class="topology-filter-banner" style="display: none;" role="status">
-                    <span id="topologyFilterText" class="topology-filter-text">Filtered by system</span>
-                    <button id="btnResetTopologyFilter" class="btn-quiet" type="button" style="padding: 2px 8px; font-size: 0.75rem;">Clear filter</button>
-                </div>
-
-                <!-- Integration Topology Map Container (Phase 4) -->
-                <div id="topologyMapWrapper" class="topology-wrapper" style="display: none;">
-                    <div class="topology-summary-bar">
-                        <div class="topology-pills-row">
-                            <span id="topoHealthyPill" class="topology-pill is-healthy">5 Healthy</span>
-                            <span id="topoWarningPill" class="topology-pill is-warning" style="display: none;">0 Warning</span>
-                            <span id="topoCriticalPill" class="topology-pill is-critical" style="display: none;">0 Critical</span>
-                        </div>
-                        <span style="font-size: 0.6875rem; color: var(--color-slate);">Click any system or channel to filter operational alerts</span>
-                    </div>
-                    <div id="topologySvgContainer" class="topology-svg-container">
-                        <!-- Dynamic SVG Graph injected safely via DOM API -->
-                    </div>
-                </div>
-
-                <!-- Dynamic Interface Cards Container -->
-                <div id="interfacesContainer" class="board-column">
-                    <!-- Dynamic interface cards rendered here safely -->
-                </div>
-            </section>
-
-            <!-- Right Column: Needs Attention (Alerts) -->
-            <section class="board-column" aria-labelledby="alertsColTitle">
-                <div class="column-header">
-                    <h3 id="alertsColTitle" class="column-title">Needs attention</h3>
-                    <span id="alertsCount" class="column-count tabular-nums">0</span>
-                </div>
-                <div id="alertsContainer" class="board-column">
-                    <!-- Dynamic alert cards rendered here safely -->
-                </div>
-            </section>
-
-        </div>
+        <main class="page-container" id="app-outlet">
+            <!-- Page content rendered here by the router -->
+        </main>
 
         <!-- Prototype Test Scenarios Footer Strip -->
-        <footer class="scenarios-footer-strip" aria-labelledby="scenariosTitle">
-            <div class="scenarios-header-row">
-                <div class="scenarios-title-wrap">
-                    <h3 id="scenariosTitle" class="scenarios-title">Prototype test scenarios</h3>
-                    <p class="scenarios-subline">Inject synthetic queue metrics to test deterministic detection rules
-                        without live backend risks.</p>
+        <div class="page-container scenarios-footer-container">
+            <footer class="scenarios-footer-strip" id="scenariosFooterStrip" aria-labelledby="scenariosTitle">
+                <div class="scenarios-header-row">
+                    <div class="scenarios-title-wrap">
+                        <h3 id="scenariosTitle" class="scenarios-title">Prototype test scenarios</h3>
+                        <p class="scenarios-subline">Inject synthetic queue metrics to test deterministic detection rules without live backend risks.</p>
+                    </div>
+                    <span id="scenariosRoleHint" class="scenarios-role-hint">Ready to simulate.</span>
                 </div>
-                <span id="scenariosRoleHint" class="scenarios-role-hint">Ready to simulate.</span>
-            </div>
-            <div class="scenarios-target-row" style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px;">
-                <label for="simulationInterfaceSelect" style="font-size: 0.8125rem; font-weight: 600; color: var(--color-ink);">Target channel:</label>
-                <select id="simulationInterfaceSelect" class="form-select-sm" style="font-family: var(--font-body); font-size: 0.8125rem; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--color-divider); background-color: var(--color-mist); color: var(--color-ink); cursor: pointer;">
-                    <option value="ALL">⚡ All Interfaces (Simulate Landscape-Wide Cascade)</option>
-                    <option value="11111111-1111-1111-1111-111111111111">Order Inbound (S/4HANA)</option>
-                    <option value="22222222-2222-2222-2222-222222222222">Invoice Outbound (Payment Gateway)</option>
-                    <option value="33333333-3333-3333-3333-333333333333">Inventory Replication (Warehouse WMS)</option>
-                </select>
-                <span id="targetInterfaceNote" style="font-size: 0.75rem; color: var(--color-slate);">Select a specific channel or simulate all channels at once</span>
-            </div>
-            <div class="scenarios-buttons-row">
-                <button class="btn-scenario sim-btn" type="button" data-scenario="NORMAL">Normal traffic</button>
-                <button class="btn-scenario sim-btn" type="button" data-scenario="RETRY_STORM">Retry storm</button>
-                <button class="btn-scenario sim-btn" type="button" data-scenario="QUEUE_GROWTH">Queue growth</button>
-                <button class="btn-scenario sim-btn" type="button" data-scenario="PERSISTENT_BACKLOG">Old message
-                    backlog</button>
-                <button class="btn-scenario sim-btn" type="button" data-scenario="RECOVERY">Recovery</button>
-                <button class="btn-scenario sim-btn" type="button" data-scenario="RECOVERY_STALLED">Stalled
-                    recovery</button>
-                <button id="btnOpenThresholdModal" class="btn-scenario" type="button" title="Configure per-interface SLA thresholds (Admin only)" style="background-color: var(--color-harbor); color: white;">Configure thresholds</button>
-                <button id="btnResetSeed" class="btn-scenario btn-reset" type="button" title="Reset all queues and alerts to clean factory baseline">Reset to baseline</button>
-            </div>
-            <div id="scenarioFeedback" class="scenario-feedback-bar" aria-live="polite"></div>
-        </footer>
+                <div class="scenarios-target-row">
+                    <label for="simulationInterfaceSelect" class="label-sm">Target channel:</label>
+                    <select id="simulationInterfaceSelect" class="form-select-sm">
+                        <option value="ALL">⚡ All Interfaces (Simulate Landscape-Wide Cascade)</option>
+                        <option value="11111111-1111-1111-1111-111111111111">Order Inbound (S/4HANA)</option>
+                        <option value="22222222-2222-2222-2222-222222222222">Invoice Outbound (Payment Gateway)</option>
+                        <option value="33333333-3333-3333-3333-333333333333">Inventory Replication (Warehouse WMS)</option>
+                    </select>
+                    <span id="targetInterfaceNote" class="hint-text">Select a specific channel or simulate all channels at once</span>
+                </div>
+                <div class="scenarios-buttons-row">
+                    <button class="btn-scenario sim-btn" type="button" data-scenario="NORMAL">Normal traffic</button>
+                    <button class="btn-scenario sim-btn" type="button" data-scenario="RETRY_STORM">Retry storm</button>
+                    <button class="btn-scenario sim-btn" type="button" data-scenario="QUEUE_GROWTH">Queue growth</button>
+                    <button class="btn-scenario sim-btn" type="button" data-scenario="PERSISTENT_BACKLOG">Old message backlog</button>
+                    <button class="btn-scenario sim-btn" type="button" data-scenario="RECOVERY">Recovery</button>
+                    <button class="btn-scenario sim-btn" type="button" data-scenario="RECOVERY_STALLED">Stalled recovery</button>
+                    <button id="btnOpenThresholdModal" class="btn-scenario btn-harbor-fill" type="button" title="Configure per-interface SLA thresholds (Admin only)">Configure thresholds</button>
+                    <button id="btnResetSeed" class="btn-scenario btn-reset" type="button" title="Reset all queues and alerts to clean factory baseline">Reset to baseline</button>
+                </div>
+                <div id="scenarioFeedback" class="scenario-feedback-bar" aria-live="polite"></div>
+            </footer>
+        </div>
+    </div>
 
-    </main>
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-    <!-- Grounded Incident Explanation Side Drawer -->
+    <!-- Grounded Incident Explanation Side Drawer (global overlay) -->
     <div id="explainDrawer" class="drawer-overlay" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"
         aria-hidden="true">
         <div class="drawer-panel">
@@ -1353,18 +129,18 @@
                     aria-label="Close explanation drawer">&times;</button>
             </div>
             <div id="drawerBody" class="drawer-body">
-                <!-- Dynamically populated without innerHTML -->
+                <!-- Dynamically populated -->
             </div>
             <div class="drawer-footer">
-                <button id="drawerExportBtn" class="btn-harbor" type="button" style="margin-right: auto;">Download Postmortem (.md)</button>
+                <button id="drawerExportBtn" class="btn-harbor btn-mr-auto" type="button">Download Postmortem (.md)</button>
                 <button id="drawerCloseBtn" class="btn-quiet" type="button">Close</button>
             </div>
         </div>
     </div>
 
-    <!-- Threshold Configuration Modal -->
+    <!-- Threshold Configuration Modal (global overlay) -->
     <div id="thresholdModal" class="drawer-overlay" role="dialog" aria-modal="true" aria-labelledby="thresholdModalTitle" aria-hidden="true">
-        <div class="drawer-panel" style="max-width: 540px;">
+        <div class="drawer-panel threshold-modal-panel">
             <div class="drawer-header">
                 <div class="drawer-header-text">
                     <h3 id="thresholdModalTitle" class="drawer-title">Interface Threshold Policy Configuration</h3>
@@ -1373,51 +149,51 @@
                 <button id="thresholdModalCloseX" class="drawer-close-btn" type="button" aria-label="Close threshold modal">&times;</button>
             </div>
             <div class="drawer-body">
-                <div id="thresholdPermissionNotice" class="alert-banner" style="display: none; background-color: #FCEFD9; color: #7A4A00; border: 1px solid #F8D7DA; padding: 12px; border-radius: 6px; font-size: 0.8125rem; margin-bottom: 12px;"></div>
+                <div id="thresholdPermissionNotice" class="alert-banner alert-banner-inline"></div>
 
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label for="thresholdInterfaceSelect" style="display: block; font-weight: 600; margin-bottom: 6px;">Select Monitored Interface:</label>
-                    <select id="thresholdInterfaceSelect" class="form-select" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-divider); background: var(--color-card-bg); font-family: var(--font-body);">
+                <div class="form-group">
+                    <label for="thresholdInterfaceSelect" class="form-label">Select Monitored Interface:</label>
+                    <select id="thresholdInterfaceSelect" class="form-select-sm form-select-compact">
                         <!-- populated dynamically -->
                     </select>
                 </div>
 
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label for="maxRetryThreshold" style="display: block; font-weight: 600; margin-bottom: 4px;">Max Retry Threshold (Rule A - Excessive Retries):</label>
-                    <p style="font-size: 0.75rem; color: var(--color-slate); margin: 0 0 6px 0;">Trigger critical alert when retry attempts exceed this limit (1 - 10,000).</p>
-                    <input type="number" id="maxRetryThreshold" min="1" max="10000" class="form-input" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-divider);" />
+                <div class="form-group">
+                    <label for="maxRetryThreshold" class="form-label">Max Retry Threshold (Rule A - Excessive Retries):</label>
+                    <p class="form-help-text">Trigger critical alert when retry attempts exceed this limit (1 - 10,000).</p>
+                    <input type="number" id="maxRetryThreshold" min="1" max="10000" class="form-input form-input-wide" />
                 </div>
 
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label for="queueGrowthLimit" style="display: block; font-weight: 600; margin-bottom: 4px;">Queue Growth Limit (Rule B - Backlog Inflow):</label>
-                    <p style="font-size: 0.75rem; color: var(--color-slate); margin: 0 0 6px 0;">Trigger high alert when pending backlog exceeds this limit (1 - 100,000).</p>
-                    <input type="number" id="queueGrowthLimit" min="1" max="100000" class="form-input" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-divider);" />
+                <div class="form-group">
+                    <label for="queueGrowthLimit" class="form-label">Queue Growth Limit (Rule B - Backlog Inflow):</label>
+                    <p class="form-help-text">Trigger high alert when pending backlog exceeds this limit (1 - 100,000).</p>
+                    <input type="number" id="queueGrowthLimit" min="1" max="100000" class="form-input form-input-wide" />
                 </div>
 
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label for="oldMessageAgeLimitSeconds" style="display: block; font-weight: 600; margin-bottom: 4px;">Old Message Age Limit (Rule C - Stale SLA in Seconds):</label>
-                    <p style="font-size: 0.75rem; color: var(--color-slate); margin: 0 0 6px 0;">Trigger high alert when oldest message age exceeds this SLA (10 - 2,592,000s).</p>
-                    <input type="number" id="oldMessageAgeLimitSeconds" min="10" max="2592000" class="form-input" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-divider);" />
+                <div class="form-group">
+                    <label for="oldMessageAgeLimitSeconds" class="form-label">Old Message Age Limit (Rule C - Stale SLA in Seconds):</label>
+                    <p class="form-help-text">Trigger high alert when oldest message age exceeds this SLA (10 - 2,592,000s).</p>
+                    <input type="number" id="oldMessageAgeLimitSeconds" min="10" max="2592000" class="form-input form-input-wide" />
                 </div>
 
-                <div class="form-group" style="margin-bottom: 16px;">
-                    <label for="recoveryStalledBacklog" style="display: block; font-weight: 600; margin-bottom: 4px;">Recovery Stalled Backlog (Rule D - Stalled Recovery):</label>
-                    <p style="font-size: 0.75rem; color: var(--color-slate); margin: 0 0 6px 0;">Trigger high alert if queue fails to drain post-recovery (1 - 100,000).</p>
-                    <input type="number" id="recoveryStalledBacklog" min="1" max="100000" class="form-input" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--color-divider);" />
+                <div class="form-group">
+                    <label for="recoveryStalledBacklog" class="form-label">Recovery Stalled Backlog (Rule D - Stalled Recovery):</label>
+                    <p class="form-help-text">Trigger high alert if queue fails to drain post-recovery (1 - 100,000).</p>
+                    <input type="number" id="recoveryStalledBacklog" min="1" max="100000" class="form-input form-input-wide" />
                 </div>
 
-                <div id="thresholdModalFeedback" style="padding: 10px; border-radius: 6px; font-size: 0.8125rem; margin-bottom: 12px; display: none;"></div>
+                <div id="thresholdModalFeedback" class="threshold-feedback"></div>
 
-                <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 12px;">
+                <div class="scenario-feedback-bar">
                     <button id="thresholdModalCancel" class="btn-quiet" type="button">Cancel</button>
-                    <button id="thresholdModalSave" class="btn-scenario sim-btn" type="button" style="background-color: var(--color-harbor); color: white;">Save Thresholds</button>
+                    <button id="thresholdModalSave" class="btn-scenario sim-btn btn-harbor-fill" type="button">Save Thresholds</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Application Script -->
-    <script src="app.js"></script>
+    <!-- Application Script (ES module) -->
+    <script type="module" src="app.js?v=5.2"></script>
 </body>
 
 </html>

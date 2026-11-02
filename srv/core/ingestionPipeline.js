@@ -78,9 +78,17 @@ async function processSnapshotAndEvaluate(entities, targetInterfaceOrId, snapsho
     }
 
     // 1. Retrieve preceding snapshot for differential analysis (e.g. Rule D: Recovery Stalled)
+    // Filter by capturedAt <= current snapshot's timestamp so late-arriving older
+    // telemetry is compared against the most recent prior observation, not a future one.
+    // Deterministic ordering: capturedAt desc (primary), createdAt desc (secondary,
+    // server insertion time), ID desc (tertiary, unique primary key tie-breaker).
+    // Exclude the current snapshot's ID so it can never select itself as predecessor,
+    // including when the snapshot entity has already been persisted.
     const previousSnapshot = await SELECT.one.from(QueueSnapshots)
         .where({ interface_ID: targetInterfaceId })
-        .orderBy('capturedAt desc');
+        .and({ capturedAt: { '<=': snapshotData.capturedAt } })
+        .and({ ID: { '!=': snapshotData.ID } })
+        .orderBy('capturedAt desc', 'createdAt desc', 'ID desc');
 
     // 2. Persist snapshot
     await INSERT.into(QueueSnapshots).entries(snapshotData);
