@@ -13,7 +13,7 @@
  *
  * Exports render(container, context) and cleanup().
  * context provides: { params, getState, setState, api, formatShortTime,
- *   FRIENDLY_RULE_TITLES, SEVERITY_WEIGHT, USER_PERMISSIONS, currentUsername }
+ *   FRIENDLY_RULE_TITLES, SEVERITY_WEIGHT, userRoles, currentUser }
  */
 
 import { LoadingState } from '../components/LoadingState.js';
@@ -272,8 +272,8 @@ export function render(container, context = {}) {
         formatShortTime,
         FRIENDLY_RULE_TITLES,
         SEVERITY_WEIGHT,
-        USER_PERMISSIONS,
-        currentUsername
+        userRoles,
+        currentUser
     } = context;
 
     container.innerHTML = '';

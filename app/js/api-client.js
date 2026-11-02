@@ -3,6 +3,17 @@
  *
  * All backend interaction goes through this module. No hardcoded metrics;
  * all data comes from the backend OData service.
+ *
+ * Authentication model:
+ *   • Development (CAP mocked auth): The frontend collects username/password
+ *     via the login screen, stores them in memory (never localStorage), and
+ *     sends them as a Basic auth header on every request. The backend CDS
+ *     mocked auth validates the credentials and sets req.user.
+ *   • Production (XSUAA): The SAP BTP platform / AppRouter establishes the
+ *     session. The frontend sends no client-chosen credentials.
+ *
+ * Credentials are held in memory only. They are cleared on logout and on
+ * page refresh. No credentials are ever written to localStorage/sessionStorage.
  */
 
 export const BASE_URL = '/odata/v4/monitoring';
@@ -21,97 +32,100 @@ export const ENDPOINTS = {
     resetToCleanSeed: () => '/resetToCleanSeed'
 };
 
+/* ------------------------------------------------------------------ */
+/* In-memory credential store                                         */
+/* ------------------------------------------------------------------ */
+
 /**
- * Returns a Basic auth header for development (mocked auth) only.
- *
- * In production (XSUAA), identity is established by the SAP BTP platform
- * through the authenticated session / OAuth token. The frontend must NOT
- * send a client-chosen username, as that would allow any visitor to
- * impersonate any role (including admin) simply by changing the dropdown.
- *
- * `getAuthHeader()` is kept for backward compatibility with direct fetch
- * callers (e.g. IncidentDetailPage.fetchRunbooks). The centralized
- * `apiRequest()` no longer uses it — it uses a retry-on-401 strategy that
- * works for both localhost and BAS preview without hostname checks.
- *
- * @returns {string} Basic auth header value, or empty string if no userSelect exists.
+ * Current development credentials, held in memory only.
+ * Never persisted to disk. Cleared on logout or page refresh.
  */
-export function getAuthHeader() {
-    const userSelect = document.getElementById('userSelect');
-    const username = userSelect ? String(userSelect.value || '').trim() : 'bob';
-    return 'Basic ' + btoa(username + ':');
+let _storedUsername = null;
+let _storedPassword = null;
+
+/**
+ * Set development credentials after a successful login.
+ * Password is NOT stored in plaintext — only used to build the Basic auth
+ * header for subsequent requests while the page session lives.
+ */
+export function setCredentials(username, password) {
+    _storedUsername = String(username || '').trim();
+    _storedPassword = String(password || '');
 }
 
 /**
- * Builds fetch headers with optional Basic auth.
+ * Clear stored credentials (logout). Subsequent requests are unauthenticated.
+ */
+export function clearCredentials() {
+    _storedUsername = null;
+    _storedPassword = null;
+}
+
+/**
+ * Returns true if development credentials are currently stored.
+ */
+export function hasCredentials() {
+    return _storedUsername !== null && _storedUsername.length > 0;
+}
+
+/**
+ * Builds the Basic auth header value from stored credentials.
+ * Returns null if no credentials are stored.
+ */
+export function getAuthHeader() {
+    if (!_storedUsername) return null;
+    return 'Basic ' + btoa(`${_storedUsername}:${_storedPassword}`);
+}
+
+/**
+ * Builds fetch headers. In development, attaches Basic auth if credentials
+ * are stored. In production (XSUAA), no client-chosen credentials are sent;
+ * the platform session authenticates via cookies/tokens.
  *
- * @param {boolean} useMockAuth - When true, adds a Basic auth header using the
- *   dropdown-selected username. Used only in development mocked-auth mode.
+ * @param {object} extra - Additional headers to merge.
  * @returns {object} Headers object.
  */
-function buildHeaders(useMockAuth = false) {
+function buildHeaders(extra = {}) {
     const headers = {
         'Accept': 'application/json',
-        ...(useMockAuth ? { 'Authorization': getAuthHeader() } : {})
+        ...extra
     };
+    const auth = getAuthHeader();
+    if (auth) {
+        headers['Authorization'] = auth;
+    }
     return headers;
 }
 
+/* ------------------------------------------------------------------ */
+/* Fetch wrapper                                                      */
+/* ------------------------------------------------------------------ */
+
 /**
- * Fetch wrapper with retry-on-401 authentication strategy.
+ * Fetch wrapper with auth header, Content-Type, and error normalization.
  *
- * Strategy:
- *   1. First attempt: no Authorization header. Works in production XSUAA where
- *      the SAP BTP platform (App Router / XSUAA) establishes the session via
- *      cookies/tokens. Also works if the endpoint is publicly accessible.
- *   2. On 401: retry with Basic auth (dropdown-selected username). Works in
- *      development mocked-auth mode (localhost and BAS preview running
- *      `cds watch` with the development profile).
+ * In development, Basic auth is sent on every request (no retry-on-401).
+ * In production, no Authorization header is sent — XSUAA authenticates via
+ * the platform session.
  *
- * This avoids hostname-based detection (e.g. checking for
- * "applicationstudio.cloud.sap") and works transparently across localhost,
- * BAS preview, and production XSUAA.
- *
- * Mock Basic authentication is never enabled in production: the [production]
- * CDS profile uses auth.kind = "xsuaa", so mocked users don't exist and the
- * retry Basic auth is rejected. The frontend role selector therefore cannot
- * grant production privileges.
- *
- * Throws an Error carrying `.status` and a `.message` so callers can map
- * status codes to friendly messages.
+ * Throws an Error carrying `.status` and a `.message`.
  */
 export async function apiRequest(path, options = {}) {
-    const headers = buildHeaders(false);
+    const headers = buildHeaders(options.headers);
     if (options.body && !headers['Content-Type']) {
         headers['Content-Type'] = 'application/json';
     }
 
-    // First attempt: no Authorization header (production XSUAA session)
-    let res = await fetch(BASE_URL + path, {
+    const res = await fetch(BASE_URL + path, {
         ...options,
         headers
     });
 
-    if (res.ok) {
-        return await readResponseBody(res);
+    if (!res.ok) {
+        throw Object.assign(new Error(`Request failed (${res.status})`), { status: res.status });
     }
 
-    // Second attempt: retry with Basic auth (development mocked mode)
-    if (res.status === 401) {
-        const mockHeaders = buildHeaders(true);
-        if (options.body && !mockHeaders['Content-Type']) {
-            mockHeaders['Content-Type'] = 'application/json';
-        }
-        res = await fetch(BASE_URL + path, {
-            ...options,
-            headers: mockHeaders
-        });
-        if (res.ok) {
-            return await readResponseBody(res);
-        }
-    }
-
-    throw Object.assign(new Error(`Request failed (${res.status})`), { status: res.status });
+    return await readResponseBody(res);
 }
 
 /**
@@ -122,6 +136,58 @@ async function readResponseBody(res) {
     const text = await res.text();
     if (!text) return {};
     return JSON.parse(text);
+}
+
+/* ------------------------------------------------------------------ */
+/* Login / Logout                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Authenticate against the development mocked auth backend.
+ * Sends Basic auth credentials; the backend validates them and returns
+ * the authenticated user's id and roles.
+ *
+ * @param {string} username
+ * @param {string} password
+ * @returns {Promise<{ userId: string, roles: string[] }>}
+ */
+export async function login(username, password) {
+    const headers = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic ' + btoa(`${String(username || '').trim()}:${String(password || '')}`)
+    };
+
+    const res = await fetch(`${BASE_URL}/../auth/login`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ username: String(username || '').trim(), password: String(password || '') })
+    });
+
+    if (!res.ok) {
+        throw Object.assign(new Error(`Login failed (${res.status})`), { status: res.status });
+    }
+
+    const data = await readResponseBody(res);
+    if (!data || !data.authenticated || !data.userId) {
+        throw Object.assign(new Error('Login failed: invalid response'), { status: 401 });
+    }
+
+    // Store credentials for subsequent requests.
+    setCredentials(data.userId, password);
+
+    return {
+        userId: data.userId,
+        roles: data.roles || []
+    };
+}
+
+/**
+ * Logout: clear in-memory credentials. Subsequent API requests are
+ * unauthenticated (401 in development).
+ */
+export function logout() {
+    clearCredentials();
 }
 
 /* ------------------------------------------------------------------ */

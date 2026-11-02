@@ -13,7 +13,7 @@
  *
  * Exports render(container, context) and cleanup(). context provides:
  *   api, getState, setState, params, FRIENDLY_RULE_TITLES, SEVERITY_WEIGHT,
- *   USER_PERMISSIONS, currentUsername, formatDurationSeconds, formatShortTime
+ *   userRoles, currentUser, formatDurationSeconds, formatShortTime
  */
 
 import { LoadingState } from '../components/LoadingState.js';
@@ -68,14 +68,18 @@ export function render(container, context = {}) {
         params,
         FRIENDLY_RULE_TITLES,
         SEVERITY_WEIGHT,
-        USER_PERMISSIONS,
-        currentUsername,
+        userRoles,
+        currentUser,
         formatDurationSeconds,
         formatShortTime
     } = context;
 
     const alertId = params && params.id ? params.id : null;
-    const perms = USER_PERMISSIONS[currentUsername] || USER_PERMISSIONS.bob;
+    const userName = currentUser || 'user';
+    const isAdmin = userRoles.includes('SimulatorAdmin');
+    const isOperator = userRoles.includes('SupportOperator');
+    const canAcknowledge = isAdmin || isOperator;
+    const canResolve = isAdmin || isOperator;
     const friendly = FRIENDLY_RULE_TITLES || {};
     const fmtDur = typeof formatDurationSeconds === 'function' ? formatDurationSeconds : (s) => String(s);
     const fmtTime = typeof formatShortTime === 'function' ? formatShortTime : (s) => (s || '');
@@ -375,12 +379,12 @@ export function render(container, context = {}) {
             explainSection.replaceChildren();
             try {
                 if (action === 'acknowledge') {
-                    if (!perms.canAcknowledge) throw new Error('Viewer role cannot acknowledge alerts.');
-                    await api.acknowledgeAlert(ID, `${perms.title || currentUsername} (${perms.roleLabel || 'Support Operator'})`);
+                    if (!canAcknowledge) throw new Error('Viewer role cannot acknowledge alerts.');
+                    await api.acknowledgeAlert(ID, userName);
                     await load();
                 } else if (action === 'resolve') {
-                    if (!perms.canResolve) throw new Error('Viewer role cannot resolve alerts.');
-                    await api.resolveAlert(ID, `${perms.title || currentUsername} (${perms.roleLabel || 'Support Operator'})`);
+                    if (!canResolve) throw new Error('Viewer role cannot resolve alerts.');
+                    await api.resolveAlert(ID, userName);
                     await load();
                 } else if (action === 'explain') {
                     await showExplain(ID);
@@ -571,11 +575,10 @@ export function render(container, context = {}) {
         }
 
         function getFriendlyErrorMessage(err, actionContext) {
-            const user = USER_PERMISSIONS[currentUsername] || { title: currentUsername };
             if (err.status === 403) {
-                if (actionContext === 'acknowledge') return `${user.title} can't acknowledge alerts with viewer permissions.`;
-                if (actionContext === 'resolve') return `${user.title} can't resolve alerts with viewer permissions.`;
-                return `${user.title} doesn't have permission for this action.`;
+                if (actionContext === 'acknowledge') return `${userName} can't acknowledge alerts. Support Operator or Simulator Admin permissions required.`;
+                if (actionContext === 'resolve') return `${userName} can't resolve alerts. Support Operator or Simulator Admin permissions required.`;
+                return `${userName} doesn't have permission for this action.`;
             }
             if (err.status === 401) return 'Authentication required. Please select a valid operator.';
             if (err.status === 404) return 'The requested alert could not be found.';

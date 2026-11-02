@@ -11,7 +11,9 @@ const state = {
     interfaces: [],
     alerts: [],
     topology: null,
-    currentUser: 'bob',
+    currentUser: null,            // set after login
+    userRoles: [],                // roles from backend, not client-side
+    isAuthenticated: false,
     viewMode: 'cards',           // 'cards' | 'topology'
     topologyFilter: null,        // { type, id, name, interfaceId? }
     explainAlertId: null,
@@ -86,6 +88,35 @@ export function setTopology(topology) {
 
 export function setCurrentUser(username) {
     state.currentUser = username;
+    notify();
+}
+
+export function setUserRoles(roles) {
+    state.userRoles = Array.isArray(roles) ? roles : [];
+    notify();
+}
+
+export function setIsAuthenticated(authenticated) {
+    state.isAuthenticated = !!authenticated;
+    notify();
+}
+
+export function setAuthError(message) {
+    state.authError = message;
+    state.loading = false;
+    notify();
+}
+
+export function clearAuthError() {
+    state.authError = null;
+    notify();
+}
+
+export function logout() {
+    state.currentUser = null;
+    state.userRoles = [];
+    state.isAuthenticated = false;
+    state.authError = null;
     notify();
 }
 

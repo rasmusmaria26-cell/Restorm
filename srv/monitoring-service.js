@@ -442,6 +442,46 @@ module.exports = class MonitoringService extends cds.ApplicationService {
             return `Database reset to clean baseline. ${allInterfaces.length} queues initialized with 0 active alerts.`;
         });
 
+        // --- Authentication endpoints ---
+
+        // POST /auth/login — Development mocked authentication only.
+        // Accepts Basic auth credentials (username:password). CDS mocked auth
+        // validates against package.json user definitions. Returns userId and
+        // roles — never passwords or tokens.
+        this.on('POST', '/auth/login', async (req) => {
+            // In production (XSUAA), login is handled by the platform AppRouter.
+            // This endpoint is development-only.
+            if (req.user) {
+                return {
+                    authenticated: true,
+                    userId: req.user.id,
+                    roles: req.user.roles || [],
+                    authKind: 'mocked'
+                };
+            }
+            return req.reject(401, 'Authentication required');
+        });
+
+        // GET /auth/me — Returns the currently authenticated user's identity
+        // and roles. Backend is the sole source of truth for roles; the frontend
+        // must never supply or trust client-provided role information.
+        this.on('GET', '/auth/me', async (req) => {
+            if (req.user) {
+                return {
+                    authenticated: true,
+                    userId: req.user.id,
+                    roles: req.user.roles || [],
+                    authKind: 'mocked'
+                };
+            }
+            return {
+                authenticated: false,
+                userId: null,
+                roles: [],
+                authKind: 'mocked'
+            };
+        });
+
         await super.init();
     }
 };

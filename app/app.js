@@ -25,7 +25,9 @@ import {
     triggerSimulation,
     configureThresholds,
     resetToCleanSeed,
-    getAuthHeader
+    login,
+    logout,
+    hasCredentials
 } from './js/api-client.js?v=5.1';
 
 import {
@@ -36,6 +38,11 @@ import {
     setAlerts,
     setTopology,
     setCurrentUser,
+    setUserRoles,
+    setIsAuthenticated,
+    setAuthError,
+    clearAuthError,
+    logout as storeLogout,
     setViewMode,
     setTopologyFilter,
     setExplainAlertId,
@@ -49,8 +56,15 @@ import { navigate, onRouteChange, start, getCurrentRoute } from './js/router.js'
 
 // --- DOM element refs (lazily resolved) ---
 let appOutlet;
-let userSelect;
-let roleBadge;
+let loginScreen;
+let mainApp;
+let loginForm;
+let loginUsername;
+let loginPassword;
+let loginError;
+let loginSubmit;
+let loginBtnText;
+let loginBtnSpinner;
 let liveToggle;
 let liveLabel;
 let sidebar;
@@ -68,7 +82,6 @@ let thresholdInterfaceSelect;
 let thresholdFeedback;
 
 // --- Runtime state ---
-let currentUsername = 'bob';
 let isLiveStreamActive = false;
 let liveStreamTimer = null;
 let activeExplainAlertId = null;
@@ -82,36 +95,6 @@ const FRIENDLY_RULE_TITLES = {
 };
 
 const SEVERITY_WEIGHT = { Critical: 3, High: 2, Warning: 1, Info: 0 };
-
-const USER_PERMISSIONS = {
-    bob: {
-        title: 'Bob',
-        roleLabel: 'Support operator',
-        badgeText: 'Can acknowledge, resolve & simulate',
-        canSimulate: true,
-        canAcknowledge: true,
-        canResolve: true,
-        canReset: false
-    },
-    alice: {
-        title: 'Alice',
-        roleLabel: 'Support viewer',
-        badgeText: 'View-only access',
-        canSimulate: false,
-        canAcknowledge: false,
-        canResolve: false,
-        canReset: false
-    },
-    admin: {
-        title: 'Admin',
-        roleLabel: 'Simulator admin',
-        badgeText: 'Full prototype & admin access',
-        canSimulate: true,
-        canAcknowledge: true,
-        canResolve: true,
-        canReset: true
-    }
-};
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
@@ -137,24 +120,29 @@ function formatShortTime(isoString) {
 }
 
 function getFriendlyErrorMessage(err, actionContext) {
-    const user = USER_PERMISSIONS[currentUsername] || { title: currentUsername };
+    const { currentUser, userRoles } = getState();
+    const userName = currentUser || 'user';
+    const isAdmin = userRoles.includes('SimulatorAdmin');
+    const isOperator = userRoles.includes('SupportOperator');
+    const isViewer = userRoles.includes('SupportViewer');
+
     if (err.status === 403) {
         if (actionContext === 'simulation') {
-            return `${user.title} can't run simulations with viewer permissions. Switch to Bob or Admin to trigger scenarios.`;
+            return `${userName} can't run simulations. Support Operator or Simulator Admin permissions required.`;
         }
         if (actionContext === 'acknowledge') {
-            return `${user.title} can't acknowledge alerts with viewer permissions. Switch to Bob or Admin.`;
+            return `${userName} can't acknowledge alerts. Support Operator or Simulator Admin permissions required.`;
         }
         if (actionContext === 'resolve') {
-            return `${user.title} can't resolve alerts with viewer permissions. Switch to Bob or Admin.`;
+            return `${userName} can't resolve alerts. Support Operator or Simulator Admin permissions required.`;
         }
         if (actionContext === 'thresholds') {
-            return `${user.title} can't configure thresholds. Simulator Admin permissions required.`;
+            return `${userName} can't configure thresholds. Simulator Admin permissions required.`;
         }
-        return `${user.title} doesn't have permission for this action. Switch to a role that can.`;
+        return `${userName} doesn't have permission for this action.`;
     }
     if (err.status === 401) {
-        return 'Authentication required. Please select a valid operator.';
+        return 'Authentication required. Please sign in again.';
     }
     if (err.status === 404) {
         return 'The requested interface or alert could not be found.';
@@ -174,8 +162,15 @@ function showFeedback(message, type = 'info') {
 
 function resolveEls() {
     appOutlet = document.getElementById('app-outlet');
-    userSelect = document.getElementById('userSelect');
-    roleBadge = document.getElementById('roleCapsBadge');
+    loginScreen = document.getElementById('login-screen');
+    mainApp = document.getElementById('main-app');
+    loginForm = document.getElementById('login-form');
+    loginUsername = document.getElementById('login-username');
+    loginPassword = document.getElementById('login-password');
+    loginError = document.getElementById('login-error');
+    loginSubmit = document.getElementById('login-submit');
+    loginBtnText = document.getElementById('login-btn-text');
+    loginBtnSpinner = document.getElementById('login-btn-spinner');
     liveToggle = document.getElementById('liveStreamToggle');
     liveLabel = document.getElementById('liveStreamLabel');
     sidebar = document.getElementById('sidebar');
@@ -198,6 +193,11 @@ function resolveEls() {
 /* ------------------------------------------------------------------ */
 
 async function refreshData() {
+    if (!getState().isAuthenticated) {
+        setLoading(false);
+        return;
+    }
+
     setLoading(true);
     clearError();
     try {
@@ -224,7 +224,12 @@ async function refreshData() {
         await renderRoute(routeName, current ? current.params : {});
     } catch (err) {
         setLoading(false);
-        setError(getFriendlyErrorMessage(err, 'read'));
+        if (err.status === 401) {
+            // Credentials no longer valid, show login
+            handleLogout();
+        } else {
+            setError(getFriendlyErrorMessage(err, 'read'));
+        }
     }
 }
 
@@ -235,14 +240,23 @@ async function refreshData() {
 let currentPage = null;
 
 function updateRoleUI() {
-    const user = USER_PERMISSIONS[currentUsername] || USER_PERMISSIONS.bob;
-    if (roleBadge) roleBadge.textContent = user.badgeText;
-    setCurrentUser(currentUsername);
+    const { currentUser, userRoles = [], isAuthenticated } = getState();
+    const userName = currentUser || '';
+    const isAdmin = userRoles.includes('SimulatorAdmin');
+    const isOperator = userRoles.includes('SupportOperator');
+    const isViewer = userRoles.includes('SupportViewer');
+    const canSimulate = isAdmin || isOperator;
+    const canAcknowledge = isAdmin || isOperator;
+    const canResolve = isAdmin || isOperator;
+    const canReset = isAdmin;
+
+    if (roleBadge) roleBadge.textContent = isAdmin ? 'Simulator admin' : isOperator ? 'Support operator' : isViewer ? 'Support viewer' : '';
+    setCurrentUser(currentUser);
 
     const hint = document.getElementById('scenariosRoleHint');
     if (hint) {
-        hint.textContent = user.canSimulate ? `Ready to simulate as ${user.title}.` : `${user.title} is in view-only mode. Scenario buttons are disabled.`;
-        if (user.canSimulate) {
+        hint.textContent = canSimulate ? `Ready to simulate as ${userName}.` : `${userName} is in view-only mode. Scenario buttons are disabled.`;
+        if (canSimulate) {
             hint.classList.remove('is-viewer');
         } else {
             hint.classList.add('is-viewer');
@@ -251,8 +265,8 @@ function updateRoleUI() {
 
     // Disable/enable scenario buttons based on permissions
     document.querySelectorAll('.sim-btn[data-scenario]').forEach(btn => {
-        btn.disabled = !user.canSimulate;
-        if (!user.canSimulate) {
+        btn.disabled = !canSimulate;
+        if (!canSimulate) {
             btn.title = 'Simulations require Support Operator or Simulator Admin permissions';
         } else {
             btn.removeAttribute('title');
@@ -261,14 +275,24 @@ function updateRoleUI() {
 
     const btnReset = document.getElementById('btnResetSeed');
     if (btnReset) {
-        btnReset.disabled = !user.canReset;
-        btnReset.title = user.canReset ? 'Reset database to clean seed' : 'Reset requires Simulator Admin role';
+        btnReset.disabled = !canReset;
+        btnReset.title = canReset ? 'Reset database to clean seed' : 'Reset requires Simulator Admin role';
     }
 
     const btnThresholdModal = document.getElementById('btnOpenThresholdModal');
     if (btnThresholdModal) {
-        btnThresholdModal.disabled = !user.canReset;
-        btnThresholdModal.title = user.canReset ? 'Configure per-interface threshold policies' : 'Thresholds require Simulator Admin role';
+        btnThresholdModal.disabled = !canReset;
+        btnThresholdModal.title = canReset ? 'Configure per-interface threshold policies' : 'Thresholds require Simulator Admin role';
+    }
+
+    const thresholdNotice = document.getElementById('thresholdPermissionNotice');
+    if (thresholdNotice) {
+        if (!isAdmin) {
+            thresholdNotice.style.display = 'block';
+            thresholdNotice.textContent = `Signed in as ${userName} (${userRoles.join(', ') || 'viewer'}). Threshold configuration requires Simulator Admin permissions. Saving changes will be rejected with 403 Forbidden.`;
+        } else {
+            thresholdNotice.style.display = 'none';
+        }
     }
 }
 
@@ -316,11 +340,12 @@ async function renderRoute(route, params) {
     currentPage = pageModule;
     if (pageModule.render) {
         try {
+            const { currentUser, userRoles } = getState();
             pageModule.render(appOutlet, { params, getState, setState, api: {
                 fetchInterfaces, fetchAlerts, fetchTopology,
                 acknowledgeAlert, resolveAlert, explainAlert, exportIncidentReport,
                 triggerSimulation, configureThresholds, resetToCleanSeed
-            }, formatDurationSeconds, formatShortTime, FRIENDLY_RULE_TITLES, SEVERITY_WEIGHT, USER_PERMISSIONS, currentUsername });
+            }, formatDurationSeconds, formatShortTime, FRIENDLY_RULE_TITLES, SEVERITY_WEIGHT, userRoles, currentUser });
         } catch (err) {
             appOutlet.innerHTML = `<div class="empty-card"><p class="empty-card-title">Page render error</p><p class="empty-card-subtitle">${err.message}</p></div>`;
             console.error('[Router] Page render error:', err);
@@ -377,14 +402,16 @@ function stopLiveStream() {
 /* ------------------------------------------------------------------ */
 
 async function handleAcknowledgeAlert(alertId) {
-    const user = USER_PERMISSIONS[currentUsername];
-    if (!user || !user.canAcknowledge) {
-        showFeedback(`${USER_PERMISSIONS[currentUsername]?.title || currentUsername} has view-only permissions. Switch to Bob or Admin to acknowledge alerts.`, 'error');
+    const { userRoles, currentUser } = getState();
+    const userName = currentUser || 'user';
+    const canAcknowledge = userRoles.includes('SimulatorAdmin') || userRoles.includes('SupportOperator');
+    if (!canAcknowledge) {
+        showFeedback(`${userName} has view-only permissions. Sign in as an operator to acknowledge alerts.`, 'error');
         return;
     }
     try {
-        await acknowledgeAlert(alertId, `${user.title} (${user.roleLabel})`);
-        showFeedback(`Alert acknowledged by ${user.title}.`, 'success');
+        await acknowledgeAlert(alertId, userName);
+        showFeedback(`Alert acknowledged by ${userName}.`, 'success');
         await refreshData();
     } catch (err) {
         showFeedback(getFriendlyErrorMessage(err, 'acknowledge'), 'error');
@@ -392,14 +419,16 @@ async function handleAcknowledgeAlert(alertId) {
 }
 
 async function handleResolveAlert(alertId) {
-    const user = USER_PERMISSIONS[currentUsername];
-    if (!user || !user.canResolve) {
-        showFeedback(`${USER_PERMISSIONS[currentUsername]?.title || currentUsername} has view-only permissions. Switch to Bob or Admin to resolve incidents.`, 'error');
+    const { userRoles, currentUser } = getState();
+    const userName = currentUser || 'user';
+    const canResolve = userRoles.includes('SimulatorAdmin') || userRoles.includes('SupportOperator');
+    if (!canResolve) {
+        showFeedback(`${userName} has view-only permissions. Sign in as an operator to resolve incidents.`, 'error');
         return;
     }
     try {
-        await resolveAlert(alertId, `${user.title} (${user.roleLabel})`);
-        showFeedback(`Incident resolved by ${user.title}.`, 'success');
+        await resolveAlert(alertId, userName);
+        showFeedback(`Incident resolved by ${userName}.`, 'success');
         await refreshData();
     } catch (err) {
         showFeedback(getFriendlyErrorMessage(err, 'resolve'), 'error');
@@ -407,9 +436,11 @@ async function handleResolveAlert(alertId) {
 }
 
 async function handleResetDatabase() {
-    const user = USER_PERMISSIONS[currentUsername];
-    if (!user || !user.canReset) {
-        showFeedback(`${USER_PERMISSIONS[currentUsername]?.title || currentUsername} cannot reset baseline. Switch to Admin (Simulator Admin) to perform database reset.`, 'error');
+    const { userRoles, currentUser } = getState();
+    const userName = currentUser || 'user';
+    const canReset = userRoles.includes('SimulatorAdmin');
+    if (!canReset) {
+        showFeedback(`${userName} cannot reset baseline. Sign in as Simulator Admin to perform database reset.`, 'error');
         return;
     }
     try {
@@ -423,9 +454,11 @@ async function handleResetDatabase() {
 }
 
 async function handleTriggerSimulation(scenario, interfaceId) {
-    const user = USER_PERMISSIONS[currentUsername];
-    if (!user || !user.canSimulate) {
-        showFeedback(`${USER_PERMISSIONS[currentUsername]?.title || currentUsername} can't run simulations with viewer permissions. Switch to Bob or Admin.`, 'error');
+    const { userRoles, currentUser } = getState();
+    const userName = currentUser || 'user';
+    const canSimulate = userRoles.includes('SimulatorAdmin') || userRoles.includes('SupportOperator');
+    if (!canSimulate) {
+        showFeedback(`${userName} can't run simulations. Sign in as an operator or admin to trigger scenarios.`, 'error');
         return;
     }
     try {
@@ -530,12 +563,13 @@ function populateSelectedInterfaceThresholds() {
 
 function updateThresholdModalPermissions() {
     const notice = document.getElementById('thresholdPermissionNotice');
-    const isAdmin = currentUsername === 'admin';
+    const { userRoles, currentUser } = getState();
+    const userName = currentUser || 'user';
+    const isAdmin = userRoles.includes('SimulatorAdmin');
     if (notice) {
         if (!isAdmin) {
             notice.style.display = 'block';
-            const user = USER_PERMISSIONS[currentUsername] || {};
-            notice.textContent = `Signed in as ${user.title} (${user.roleLabel}). Threshold configuration requires Simulator Admin permissions. Saving changes will be rejected with 403 Forbidden.`;
+            notice.textContent = `Signed in as ${userName} (${userRoles.join(', ') || 'viewer'}). Threshold configuration requires Simulator Admin permissions. Saving changes will be rejected with 403 Forbidden.`;
         } else {
             notice.style.display = 'none';
         }
@@ -756,12 +790,17 @@ function initializeEvents() {
     // Live stream toggle
     if (liveToggle) liveToggle.addEventListener('click', toggleLiveStream);
 
-    // User role switcher
-    if (userSelect) {
-        userSelect.addEventListener('change', (e) => {
-            currentUsername = e.target.value;
-            updateRoleUI();
-            refreshData();
+    // Login form submit
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLogin);
+    }
+
+    // Logout button (in sidebar)
+    const btnLogout = document.getElementById('btnLogout');
+    if (btnLogout) {
+        btnLogout.addEventListener('click', (e) => {
+            e.preventDefault();
+            handleLogout();
         });
     }
 
@@ -849,18 +888,100 @@ function initializeEvents() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Authentication                                                     */
+/* ------------------------------------------------------------------ */
+
+async function handleLogin(e) {
+    e.preventDefault();
+    const username = loginUsername ? loginUsername.value.trim() : '';
+    const password = loginPassword ? loginPassword.value : '';
+
+    if (!username || !password) {
+        if (loginError) {
+            loginError.textContent = 'Please enter both username and password.';
+            loginError.style.display = 'block';
+        }
+        return;
+    }
+
+    // Set loading state
+    if (loginSubmit) loginSubmit.disabled = true;
+    if (loginBtnText) loginBtnText.textContent = 'Signing in...';
+    if (loginBtnSpinner) loginBtnSpinner.style.display = 'inline-block';
+    if (loginError) loginError.style.display = 'none';
+    clearAuthError();
+
+    try {
+        const result = await login(username, password);
+        // Store auth state from backend (sole source of truth for roles)
+        setCurrentUser(result.userId);
+        setUserRoles(result.roles);
+        setIsAuthenticated(true);
+
+        // Hide login, show main app
+        if (loginScreen) loginScreen.style.display = 'none';
+        if (mainApp) mainApp.style.display = 'block';
+
+        // Update UI for authenticated user
+        updateRoleUI();
+
+        // Initial data load
+        await refreshData();
+    } catch (err) {
+        const msg = err.status === 401 ? 'Invalid username or password.' : `Login failed (${err.status}). Please try again.`;
+        if (loginError) {
+            loginError.textContent = msg;
+            loginError.style.display = 'block';
+        }
+        setAuthError(msg);
+    } finally {
+        if (loginSubmit) loginSubmit.disabled = false;
+        if (loginBtnText) loginBtnText.textContent = 'Sign in';
+        if (loginBtnSpinner) loginBtnSpinner.style.display = 'none';
+    }
+}
+
+async function handleLogout() {
+    logout();
+    storeLogout();
+
+    // Hide main app, show login
+    if (mainApp) mainApp.style.display = 'none';
+    if (loginScreen) loginScreen.style.display = 'flex';
+
+    // Clear form
+    if (loginUsername) loginUsername.value = '';
+    if (loginPassword) loginPassword.value = '';
+    if (loginError) loginError.style.display = 'none';
+}
+
+/* ------------------------------------------------------------------ */
 /* Bootstrap                                                          */
 /* ------------------------------------------------------------------ */
 
 async function bootstrap() {
     resolveEls();
-    updateRoleUI();
+
+    // Check authentication status from in-memory credentials
+    const stored = hasCredentials();
+
+    if (stored) {
+        setIsAuthenticated(true);
+        if (loginScreen) loginScreen.style.display = 'none';
+        if (mainApp) mainApp.style.display = 'block';
+    } else {
+        // No credentials stored, show login
+        if (loginScreen) loginScreen.style.display = 'flex';
+        if (mainApp) mainApp.style.display = 'none';
+    }
 
     // Start router
     start();
 
-    // Initial data load
-    await refreshData();
+    // Only load data if authenticated
+    if (getState().isAuthenticated) {
+        await refreshData();
+    }
 
     // Wire events
     initializeEvents();

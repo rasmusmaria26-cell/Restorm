@@ -15,7 +15,7 @@
  *
  * Exports render(container, context) and cleanup().
  * context provides: { params, getState, setState, api, formatShortTime,
- *   FRIENDLY_RULE_TITLES, SEVERITY_WEIGHT, USER_PERMISSIONS, currentUsername }
+ *   FRIENDLY_RULE_TITLES, SEVERITY_WEIGHT, userRoles, currentUser }
  */
 
 import { LoadingState } from '../components/LoadingState.js';
@@ -84,13 +84,15 @@ function escapeHtml(text) {
 }
 
 function permissionContext(context) {
-    const user = context.currentUsername || 'bob';
-    const perms = context.USER_PERMISSIONS && context.USER_PERMISSIONS[user];
+    const { userRoles, currentUser } = context;
+    const user = currentUser || 'user';
+    const isAdmin = userRoles.includes('SimulatorAdmin');
+    const isOperator = userRoles.includes('SupportOperator');
     return {
         user,
-        canAcknowledge: Boolean(perms && perms.canAcknowledge),
-        canResolve: Boolean(perms && perms.canResolve),
-        canSimulate: Boolean(perms && perms.canSimulate)
+        canAcknowledge: isAdmin || isOperator,
+        canResolve: isAdmin || isOperator,
+        canSimulate: isAdmin || isOperator
     };
 }
 
@@ -217,8 +219,8 @@ export function render(container, context = {}) {
         formatShortTime,
         FRIENDLY_RULE_TITLES,
         SEVERITY_WEIGHT,
-        USER_PERMISSIONS,
-        currentUsername
+        userRoles,
+        currentUser
     } = context;
 
     const interfaceId = params && params.id ? String(params.id) : null;

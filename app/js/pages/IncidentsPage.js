@@ -12,7 +12,7 @@
  *
  * Exports render(container, context) and cleanup(). context provides:
  *   api, getState, setState, FRIENDLY_RULE_TITLES, SEVERITY_WEIGHT,
- *   USER_PERMISSIONS, currentUsername, formatDurationSeconds, formatShortTime
+ *   userRoles, currentUser, formatDurationSeconds, formatShortTime
  */
 
 import { LoadingState } from '../components/LoadingState.js';
@@ -31,13 +31,17 @@ export function render(container, context = {}) {
         setState,
         FRIENDLY_RULE_TITLES = {},
         SEVERITY_WEIGHT = { Critical: 3, High: 2, Warning: 1, Info: 0 },
-        USER_PERMISSIONS = {},
-        currentUsername = 'bob',
+        userRoles,
+        currentUser,
         formatDurationSeconds,
         formatShortTime
     } = context;
 
-    const perms = USER_PERMISSIONS[currentUsername] || USER_PERMISSIONS.bob || {};
+    const userName = currentUser || 'user';
+    const isAdmin = userRoles.includes('SimulatorAdmin');
+    const isOperator = userRoles.includes('SupportOperator');
+    const canAcknowledge = isAdmin || isOperator;
+    const canResolve = isAdmin || isOperator;
     const fmtDur = typeof formatDurationSeconds === 'function' ? formatDurationSeconds : (s) => String(s);
     const fmtTime = typeof formatShortTime === 'function' ? formatShortTime : (s) => (s || '');
 
@@ -213,11 +217,10 @@ export function render(container, context = {}) {
     }
 
     function getFriendlyErrorMessage(err, actionContext) {
-        const user = USER_PERMISSIONS[currentUsername] || { title: currentUsername };
         if (err.status === 403) {
-            if (actionContext === 'acknowledge') return `${user.title} can't acknowledge alerts with viewer permissions. Switch to Bob or Admin.`;
-            if (actionContext === 'resolve') return `${user.title} can't resolve alerts with viewer permissions. Switch to Bob or Admin.`;
-            return `${user.title} doesn't have permission for this action.`;
+            if (actionContext === 'acknowledge') return `${userName} can't acknowledge alerts. Support Operator or Simulator Admin permissions required.`;
+            if (actionContext === 'resolve') return `${userName} can't resolve alerts. Support Operator or Simulator Admin permissions required.`;
+            return `${userName} doesn't have permission for this action.`;
         }
         if (err.status === 401) return 'Authentication required. Please select a valid operator.';
         if (err.status === 404) return 'The requested alert could not be found.';
@@ -283,17 +286,17 @@ export function render(container, context = {}) {
     }
 
     async function handleAction(action, alertId) {
-        if (action === 'acknowledge' && !perms.canAcknowledge) {
-            showPageError(`${USER_PERMISSIONS[currentUsername]?.title || currentUsername} cannot acknowledge alerts (view-only).`);
+        if (action === 'acknowledge' && !canAcknowledge) {
+            showPageError(`${userName} cannot acknowledge alerts (view-only).`);
             return;
         }
-        if (action === 'resolve' && !perms.canResolve) {
-            showPageError(`${USER_PERMISSIONS[currentUsername]?.title || currentUsername} cannot resolve alerts (view-only).`);
+        if (action === 'resolve' && !canResolve) {
+            showPageError(`${userName} cannot resolve alerts (view-only).`);
             return;
         }
 
         try {
-            const actor = `${USER_PERMISSIONS[currentUsername]?.title || currentUsername} (${USER_PERMISSIONS[currentUsername]?.roleLabel || 'Support Operator'})`;
+            const actor = userName;
             if (action === 'acknowledge') {
                 await api.acknowledgeAlert(alertId, actor);
                 await load();

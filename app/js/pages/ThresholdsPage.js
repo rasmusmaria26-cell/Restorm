@@ -9,7 +9,7 @@
  * 403 Forbidden from the backend).
  *
  * Exports render(container, context) and cleanup(). context provides:
- *   api, getState, setState, USER_PERMISSIONS, currentUsername
+ *   api, getState, setState, userRoles, currentUser
  */
 
 import { LoadingState } from '../components/LoadingState.js';
@@ -37,12 +37,12 @@ export function render(container, context = {}) {
     const {
         api,
         getState,
-        USER_PERMISSIONS,
-        currentUsername
+        userRoles,
+        currentUser
     } = context;
 
-    const perms = USER_PERMISSIONS[currentUsername] || USER_PERMISSIONS.bob;
-    const isAdmin = currentUsername === 'admin';
+    const userName = currentUser || 'user';
+    const isAdmin = userRoles.includes('SimulatorAdmin');
 
     const page = document.createElement('div');
     page.className = 'thresholds-page';
@@ -61,7 +61,7 @@ export function render(container, context = {}) {
         notice.style.borderRadius = 'var(--border-radius-sm)';
         notice.style.background = 'var(--color-high-badge-bg)';
         notice.style.color = 'var(--color-high-badge-text)';
-        notice.textContent = `Signed in as ${perms.title || currentUsername} (${perms.roleLabel || 'Support Viewer'}). Threshold configuration requires Simulator Admin permissions. Save attempts will be rejected with 403 Forbidden.`;
+        notice.textContent = `Signed in as ${userName} (${userRoles.join(', ') || 'viewer'}). Threshold configuration requires Simulator Admin permissions. Save attempts will be rejected with 403 Forbidden.`;
         page.appendChild(notice);
     }
 
@@ -333,7 +333,7 @@ export function render(container, context = {}) {
         } catch (err) {
             feedback.style.color = 'var(--color-critical-text)';
             if (err.status === 403) {
-                feedback.textContent = `403 Forbidden: ${perms.title || currentUsername} is not authorized to configure thresholds (Simulator Admin required).`;
+                feedback.textContent = `403 Forbidden: ${userName} is not authorized to configure thresholds (Simulator Admin required).`;
             } else if (err.status === 404) {
                 feedback.textContent = 'Interface not found.';
             } else if (err.status === 400) {
