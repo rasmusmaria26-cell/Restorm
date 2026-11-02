@@ -282,33 +282,83 @@ module.exports = class MonitoringService extends cds.ApplicationService {
                 return req.reject(400, `Invalid scenario '${scenario}'. Allowed: ${ALLOWED_SCENARIOS.join(', ')}`);
             }
 
-            // 2. Validate interfaceId
-            let targetInterface;
-            if (interfaceId) {
+            // 2. Determine target interface(s)
+            let targetInterfaces;
+            let isLandscapeWide = false;
+
+            if (interfaceId === 'ALL' || interfaceId === undefined || interfaceId === null) {
+                // Landscape-wide cascade: simulate across all active interfaces
+                isLandscapeWide = true;
+                targetInterfaces = await SELECT.from(Interfaces).where({ active: true });
+                if (!targetInterfaces || targetInterfaces.length === 0) {
+                    return req.reject(400, 'No active interfaces found for landscape-wide simulation');
+                }
+            } else {
+                // Single interface: validate and lookup
                 if (typeof interfaceId !== 'string' || interfaceId.length > 36) {
                     return req.reject(400, 'Invalid interfaceId format');
                 }
-                targetInterface = await SELECT.one.from(Interfaces).where({ ID: interfaceId });
-                if (!targetInterface) return req.reject(404, `Interface ${interfaceId} not found`);
-            } else {
-                targetInterface = await SELECT.one.from(Interfaces).where({ active: true }) 
-                               || await SELECT.one.from(Interfaces);
+                const single = await SELECT.one.from(Interfaces).where({ ID: interfaceId });
+                if (!single) return req.reject(404, `Interface ${interfaceId} not found`);
+                targetInterfaces = [single];
             }
 
-            if (!targetInterface) return req.reject(400, 'No active interface found for simulation');
+            // 3-4. For each interface: generate snapshot + execute detection pipeline
+            const results = [];
+            for (const iface of targetInterfaces) {
+                const snapshotData = generateSnapshotData(scenario, iface.ID);
+                try {
+                    const result = await processSnapshotAndEvaluate(
+                        { QueueSnapshots, Alerts, Interfaces },
+                        iface,
+                        snapshotData,
+                        `Scenario [${scenario || 'NORMAL'}] executed on ${iface.ID}`
+                    );
+                    results.push({
+                        interfaceId: iface.ID,
+                        interfaceName: iface.name,
+                        status: result.status,
+                        alertTriggered: result.alertTriggered,
+                        alertAction: result.alertAction,
+                        ruleCode: result.ruleCode,
+                        severity: result.severity,
+                        repeatCount: result.repeatCount,
+                        summary: result.summary,
+                        message: result.message,
+                        error: null
+                    });
+                } catch (err) {
+                    results.push({
+                        interfaceId: iface.ID,
+                        interfaceName: iface.name,
+                        status: 'Error',
+                        alertTriggered: false,
+                        alertAction: 'None',
+                        ruleCode: null,
+                        severity: null,
+                        repeatCount: 0,
+                        summary: null,
+                        message: null,
+                        error: err.message || 'Simulation failed'
+                    });
+                }
+            }
 
-            // 3. Generate snapshot via Simulator
-            const snapshotData = generateSnapshotData(scenario, targetInterface.ID);
+            if (isLandscapeWide) {
+                const total = results.length;
+                const triggered = results.filter(r => r.alertTriggered).length;
+                const errors = results.filter(r => r.error).length;
+                return {
+                    landscapeWide: true,
+                    scenario: scenario || 'NORMAL',
+                    totalInterfaces: total,
+                    interfacesWithAlerts: triggered,
+                    interfacesWithErrors: errors,
+                    results
+                };
+            }
 
-            // 4. Execute core evaluation pipeline
-            const result = await processSnapshotAndEvaluate(
-                { QueueSnapshots, Alerts, Interfaces },
-                targetInterface,
-                snapshotData,
-                `Scenario [${scenario || 'NORMAL'}] executed`
-            );
-
-            return result.message;
+            return results[0].message;
         });
 
         // Action: Configure per-interface threshold policies (Admin only)

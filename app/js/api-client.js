@@ -10,6 +10,7 @@ export const BASE_URL = '/odata/v4/monitoring';
 export const ENDPOINTS = {
     interfaces: () => '/Interfaces?$expand=snapshots($orderby=capturedAt asc)',
     alerts: () => '/Alerts?$expand=interface&$orderby=detectedAt desc',
+    runbooks: () => '/RunbookEntries',
     topology: () => '/getTopology()',
     acknowledgeAlert: (id) => `/Alerts(${encodeURIComponent(id)})/MonitoringService.acknowledge`,
     resolveAlert: (id) => `/Alerts(${encodeURIComponent(id)})/MonitoringService.resolveAlert`,
@@ -28,59 +29,96 @@ export const ENDPOINTS = {
  * send a client-chosen username, as that would allow any visitor to
  * impersonate any role (including admin) simply by changing the dropdown.
  *
- * @returns {string} Basic auth header value in development, empty string in production.
+ * `getAuthHeader()` is kept for backward compatibility with direct fetch
+ * callers (e.g. IncidentDetailPage.fetchRunbooks). The centralized
+ * `apiRequest()` no longer uses it — it uses a retry-on-401 strategy that
+ * works for both localhost and BAS preview without hostname checks.
+ *
+ * @returns {string} Basic auth header value, or empty string if no userSelect exists.
  */
 export function getAuthHeader() {
-    // Development: mocked auth via CAP. Send Basic auth with dropdown-selected username.
-    // Production (XSUAA): identity comes from the platform session; do not send
-    // a client-chosen username. Detect production by non-localhost hostname.
-    const isLocalhost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-    if (!isLocalhost) {
-        return '';
-    }
-
     const userSelect = document.getElementById('userSelect');
     const username = userSelect ? userSelect.value : 'bob';
     return 'Basic ' + btoa(username + ':');
 }
 
 /**
- * Fetch wrapper with auth header, Content-Type, and error normalization.
+ * Builds fetch headers with optional Basic auth.
+ *
+ * @param {boolean} useMockAuth - When true, adds a Basic auth header using the
+ *   dropdown-selected username. Used only in development mocked-auth mode.
+ * @returns {object} Headers object.
+ */
+function buildHeaders(useMockAuth = false) {
+    const headers = {
+        'Accept': 'application/json',
+        ...(useMockAuth ? { 'Authorization': getAuthHeader() } : {})
+    };
+    return headers;
+}
+
+/**
+ * Fetch wrapper with retry-on-401 authentication strategy.
+ *
+ * Strategy:
+ *   1. First attempt: no Authorization header. Works in production XSUAA where
+ *      the SAP BTP platform (App Router / XSUAA) establishes the session via
+ *      cookies/tokens. Also works if the endpoint is publicly accessible.
+ *   2. On 401: retry with Basic auth (dropdown-selected username). Works in
+ *      development mocked-auth mode (localhost and BAS preview running
+ *      `cds watch` with the development profile).
+ *
+ * This avoids hostname-based detection (e.g. checking for
+ * "applicationstudio.cloud.sap") and works transparently across localhost,
+ * BAS preview, and production XSUAA.
+ *
+ * Mock Basic authentication is never enabled in production: the [production]
+ * CDS profile uses auth.kind = "xsuaa", so mocked users don't exist and the
+ * retry Basic auth is rejected. The frontend role selector therefore cannot
+ * grant production privileges.
+ *
  * Throws an Error carrying `.status` and a `.message` so callers can map
  * status codes to friendly messages.
  */
 export async function apiRequest(path, options = {}) {
-    const headers = {
-        'Authorization': getAuthHeader(),
-        'Accept': 'application/json',
-        ...options.headers
-    };
-
-    // Only set Content-Type when a body is present (avoid overriding for GETs)
+    const headers = buildHeaders(false);
     if (options.body && !headers['Content-Type']) {
         headers['Content-Type'] = 'application/json';
     }
 
-    const res = await fetch(BASE_URL + path, {
+    // First attempt: no Authorization header (production XSUAA session)
+    let res = await fetch(BASE_URL + path, {
         ...options,
         headers
     });
 
-    if (!res.ok) {
-        let errorBodyText = '';
-        try {
-            errorBodyText = await res.text();
-        } catch (e) {
-            errorBodyText = res.statusText;
-        }
-        const errorObj = new Error(`Request failed (${res.status})`);
-        errorObj.status = res.status;
-        throw errorObj;
+    if (res.ok) {
+        return await readResponseBody(res);
     }
 
-    // Some endpoints (e.g. explain) return empty body; guard against that.
-    // read the body ONCE as text then parse — calling res.text() and res.json()
-    // on the same stream throws "body stream already read".
+    // Second attempt: retry with Basic auth (development mocked mode)
+    if (res.status === 401) {
+        const mockHeaders = buildHeaders(true);
+        if (options.body && !mockHeaders['Content-Type']) {
+            mockHeaders['Content-Type'] = 'application/json';
+        }
+        res = await fetch(BASE_URL + path, {
+            ...options,
+            headers: mockHeaders
+        });
+        if (res.ok) {
+            return await readResponseBody(res);
+        }
+    }
+
+    throw Object.assign(new Error(`Request failed (${res.status})`), { status: res.status });
+}
+
+/**
+ * Read response body once as text then parse JSON.
+ * Guard against empty bodies (e.g. explain endpoint).
+ */
+async function readResponseBody(res) {
     const text = await res.text();
     if (!text) return {};
     return JSON.parse(text);
@@ -93,6 +131,11 @@ export async function apiRequest(path, options = {}) {
 /** Fetch monitored interfaces with expanded snapshots (chronological). */
 export function fetchInterfaces() {
     return apiRequest(ENDPOINTS.interfaces());
+}
+
+/** Fetch runbook entries (read-only catalog). */
+export function fetchRunbooks() {
+    return apiRequest(ENDPOINTS.runbooks());
 }
 
 /** Fetch alerts ordered newest first, expanded with interface. */

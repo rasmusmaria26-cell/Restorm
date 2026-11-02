@@ -464,4 +464,152 @@ describe('Backend contract integration (MonitoringService OData surface)', () =>
             assert.equal(resolved.status, 'Resolved');
         });
     });
+
+    describe('Landscape-wide simulation (All Interfaces)', () => {
+        it('triggerSimulation with interfaceId ALL runs cascade across all active interfaces', async () => {
+            const bobTx = ctx.bobTx();
+
+            const ifaces = await bobTx.run(from('Interfaces').where({ active: true }));
+            assert.ok(ifaces.length > 0, 'Seed must have at least one active interface');
+
+            const res = await bobTx.send('triggerSimulation', { scenario: 'RETRY_STORM', interfaceId: 'ALL' });
+
+            assert.ok(res, 'Landscape-wide simulation must return a result');
+            assert.equal(res.landscapeWide, true);
+            assert.equal(res.scenario, 'RETRY_STORM');
+            assert.equal(res.totalInterfaces, ifaces.length);
+            assert.ok(Array.isArray(res.results));
+            assert.equal(res.results.length, ifaces.length);
+
+            // Each result must reference a valid interface ID
+            for (const r of res.results) {
+                assert.ok(r.interfaceId, 'Each result must have an interfaceId');
+                assert.ok(r.interfaceName, 'Each result must have an interfaceName');
+                assert.equal(r.error, null, `Interface ${r.interfaceId} should not error: ${r.error}`);
+                assert.ok(typeof r.status === 'string', 'Each result must have a status');
+            }
+
+            // Clean up for subsequent tests
+            const adminTx = ctx.adminTx();
+            await adminTx.send('resetToCleanSeed');
+        });
+
+        it('triggerSimulation with specific interfaceId still works (single interface preserved)', async () => {
+            const bobTx = ctx.bobTx();
+            const iface = (await bobTx.run(from('Interfaces').where({ active: true })))[0];
+            assert.ok(iface, 'Must have at least one active interface');
+
+            const res = await bobTx.send('triggerSimulation', { scenario: 'RETRY_STORM', interfaceId: iface.ID });
+
+            assert.equal(typeof res, 'string', 'Single-interface simulation must return a message string');
+            assert.ok(res.includes('Snapshot saved') || res.includes('Alert'), 'Message should describe outcome');
+
+            const adminTx = ctx.adminTx();
+            await adminTx.send('resetToCleanSeed');
+        });
+
+        it('triggerSimulation with invalid interfaceId returns 404', async () => {
+            const bobTx = ctx.bobTx();
+
+            await assert.rejects(
+                async () => {
+                    await bobTx.send('triggerSimulation', { scenario: 'RETRY_STORM', interfaceId: '00000000-0000-0000-0000-000000000000' });
+                },
+                (err) => {
+                    assert.equal(err.code || err.status, 404);
+                    assert.match(err.message, /not found/);
+                    return true;
+                }
+            );
+        });
+
+        it('triggerSimulation with malformed interfaceId returns an error', async () => {
+            const bobTx = ctx.bobTx();
+
+            // CDS may reject non-UUID format at framework level; my handler may
+            // reject >36 chars; or the string may pass through and fail lookup.
+            // Any error is acceptable for a malformed interfaceId.
+            await assert.rejects(
+                async () => {
+                    await bobTx.send('triggerSimulation', { scenario: 'RETRY_STORM', interfaceId: 'NOT_A_VALID_UUID_FORMAT' });
+                },
+                (err) => {
+                    const code = err.code || err.status;
+                    assert.ok(code === 400 || code === 404 || code === 'ASSERT_DATA_TYPE', `Expected 400/404/ASSERT_DATA_TYPE, got ${code}`);
+                    return true;
+                }
+            );
+        });
+
+        it('triggerSimulation with invalid scenario returns 400', async () => {
+            const bobTx = ctx.bobTx();
+            const iface = (await bobTx.run(from('Interfaces').where({ active: true })))[0];
+            assert.ok(iface, 'Must have at least one active interface');
+
+            await assert.rejects(
+                async () => {
+                    await bobTx.send('triggerSimulation', { scenario: 'INVALID_ATTACK_SCENARIO', interfaceId: iface.ID });
+                },
+                (err) => {
+                    assert.equal(err.code || err.status, 400);
+                    assert.match(err.message, /Invalid scenario/);
+                    return true;
+                }
+            );
+
+            const adminTx = ctx.adminTx();
+            await adminTx.send('resetToCleanSeed');
+        });
+
+        it('triggerSimulation landscape-wide generates incidents with valid interface IDs', async () => {
+            const bobTx = ctx.bobTx();
+
+            const ifaces = await bobTx.run(from('Interfaces').where({ active: true }));
+            assert.ok(ifaces.length > 0, 'Seed must have at least one active interface');
+
+            const res = await bobTx.send('triggerSimulation', { scenario: 'RETRY_STORM', interfaceId: 'ALL' });
+
+            assert.equal(res.landscapeWide, true);
+            assert.ok(res.totalInterfaces > 0, 'Must simulate at least one interface');
+
+            // Verify generated alerts reference valid interface IDs
+            const alertInterfaces = await bobTx.run(from('Alerts').where({ status: 'Open' }));
+            for (const alert of alertInterfaces) {
+                const ifaceExists = ifaces.some(i => i.ID === alert.interface_ID);
+                assert.ok(ifaceExists, `Alert references invalid interface_ID: ${alert.interface_ID}`);
+            }
+
+            const adminTx = ctx.adminTx();
+            await adminTx.send('resetToCleanSeed');
+        });
+
+        it('triggerSimulation landscape-wide respects per-interface authorization and thresholds', async () => {
+            const adminTx = ctx.adminTx();
+            const bobTx = ctx.bobTx();
+
+            const ifaces = await bobTx.run(from('Interfaces').where({ active: true }));
+            assert.ok(ifaces.length > 0, 'Must have active interfaces');
+
+            // Admin changes a threshold on one interface to trigger an alert
+            const target = ifaces[0];
+            await adminTx.send('configureThresholds', {
+                interfaceId: target.ID,
+                maxRetryThreshold: 1,
+                queueGrowthLimit: 1,
+                oldMessageAgeLimitSeconds: 10,
+                recoveryStalledBacklog: 1
+            });
+
+            // Landscape-wide simulation should trigger alerts on the tightened interface
+            const res = await bobTx.send('triggerSimulation', { scenario: 'RETRY_STORM', interfaceId: 'ALL' });
+
+            assert.equal(res.landscapeWide, true);
+            const targetResult = res.results.find(r => r.interfaceId === target.ID);
+            assert.ok(targetResult, `Must have result for interface ${target.ID}`);
+            assert.ok(targetResult.alertTriggered, `Interface ${target.ID} should trigger alert with tightened thresholds`);
+
+            const adminTx2 = ctx.adminTx();
+            await adminTx2.send('resetToCleanSeed');
+        });
+    });
 });

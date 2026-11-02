@@ -57,6 +57,13 @@
         "auth": {
           "kind": "xsuaa"
         }
+      },
+      "[development]": {
+        "requires": {
+          "auth": {
+            "kind": "mocked"
+          }
+        }
       }
     },
     "server": {

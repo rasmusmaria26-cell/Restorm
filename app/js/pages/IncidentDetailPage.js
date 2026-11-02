@@ -21,7 +21,7 @@ import { ErrorState } from '../components/ErrorState.js';
 import { EmptyState } from '../components/EmptyState.js';
 import { Card } from '../components/Card.js';
 import { Button } from '../components/Button.js';
-import { BASE_URL, getAuthHeader } from '../api-client.js';
+import { BASE_URL } from '../api-client.js';
 
 function severityClass(severity) {
     switch (severity) {
@@ -47,12 +47,12 @@ function parseMetrics(observedMetrics) {
 }
 
 async function fetchRunbooks() {
-    const res = await fetch(`${BASE_URL}/RunbookEntries`, {
-        headers: { 'Authorization': getAuthHeader(), 'Accept': 'application/json' }
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data.value) ? data.value : (Array.isArray(data) ? data : []);
+    try {
+        const data = await api.fetchRunbooks();
+        return Array.isArray(data.value) ? data.value : (Array.isArray(data) ? data : []);
+    } catch {
+        return [];
+    }
 }
 
 function runbookTitleById(runbooks, id) {
