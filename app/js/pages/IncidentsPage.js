@@ -37,11 +37,13 @@ export function render(container, context = {}) {
         formatShortTime
     } = context;
 
+    const roles = Array.isArray(userRoles) ? userRoles : [];
     const userName = currentUser || 'user';
-    const isAdmin = userRoles.includes('SimulatorAdmin');
-    const isOperator = userRoles.includes('SupportOperator');
+    const isAdmin = roles.includes('SimulatorAdmin');
+    const isOperator = roles.includes('SupportOperator');
     const canAcknowledge = isAdmin || isOperator;
     const canResolve = isAdmin || isOperator;
+    const perms = { canAcknowledge, canResolve, isAdmin, isOperator };
     const fmtDur = typeof formatDurationSeconds === 'function' ? formatDurationSeconds : (s) => String(s);
     const fmtTime = typeof formatShortTime === 'function' ? formatShortTime : (s) => (s || '');
 

@@ -16,16 +16,16 @@ describe('LangSmith Trace Redaction & Privacy Engine (Test Group B)', () => {
         assert.ok(!redactString(inputWithBearer).includes('eyJhbGciOiJIUzI1Ni'));
         assert.ok(redactString(inputWithBearer).includes('[REDACTED_SECRET]'));
 
-        const inputWithGemini = 'Calling Gemini key AIzaSyD3x9kL4mN2pQ8rT6vW1yZ0aB5cE7gH9jK';
-        assert.ok(!redactString(inputWithGemini).includes('AIzaSyD3x9kL4mN2pQ8rT6vW1yZ0aB5cE7gH9jK'));
+        const inputWithGemini = 'Calling Gemini key AIzaSyTEST_FAKE_KEY_DO_NOT_USE_ABCDEFGHIJKLM';
+        assert.ok(!redactString(inputWithGemini).includes('AIzaSyTEST_FAKE_KEY_DO_NOT_USE_ABCDEFGHIJKLM'));
         assert.ok(redactString(inputWithGemini).includes('[REDACTED_SECRET]'));
 
-        const inputWithOpenRouter = 'Using key sk-or-v1-abcdef1234567890abcdef1234567890';
-        assert.ok(!redactString(inputWithOpenRouter).includes('sk-or-v1-abcdef'));
+        const inputWithOpenRouter = 'Using key sk-or-v1-TEST_FAKE_KEY_DO_NOT_USE_ABCDEFGHIJKLM';
+        assert.ok(!redactString(inputWithOpenRouter).includes('sk-or-v1-TEST_FAKE_KEY_DO_NOT_USE_ABCDEFGHIJKLM'));
         assert.ok(redactString(inputWithOpenRouter).includes('[REDACTED_SECRET]'));
 
-        const inputWithLangSmith = 'Using lsv2_pt_abc123def456_7890';
-        assert.ok(!redactString(inputWithLangSmith).includes('lsv2_pt_'));
+        const inputWithLangSmith = 'Using lsv2_pt_TEST_FAKE_KEY_DO_NOT_USE_ABCDEFGHIJKLM';
+        assert.ok(!redactString(inputWithLangSmith).includes('lsv2_pt_TEST_FAKE_KEY_DO_NOT_USE_ABCDEFGHIJKLM'));
         assert.ok(redactString(inputWithLangSmith).includes('[REDACTED_SECRET]'));
     });
 
@@ -39,11 +39,11 @@ describe('LangSmith Trace Redaction & Privacy Engine (Test Group B)', () => {
     it('B3: Sensitive keys in nested objects are redacted', () => {
         const payload = {
             interfaceId: 'IF-ORDERS-01',
-            apiKey: 'secret_api_key_123',
-            authorization: 'Bearer token999',
-            password: 'admin_password!',
+            apiKey: 'TEST_FAKE_API_KEY_DO_NOT_USE',
+            authorization: 'Bearer TEST_FAKE_BEARER_TOKEN_DO_NOT_USE',
+            password: 'TEST_FAKE_PASSWORD_DO_NOT_USE',
             nested: {
-                client_secret: 'top_secret',
+                client_secret: 'TEST_FAKE_CLIENT_SECRET_DO_NOT_USE',
                 safeMetric: 450
             }
         };
@@ -94,7 +94,7 @@ describe('LangSmith Trace Redaction & Privacy Engine (Test Group B)', () => {
     });
 
     it('B6: Error objects are sanitized without leaking raw internal stacks or tokens', () => {
-        const err = new Error('Connection refused to https://api.service.com?apiKey=AIzaSyD3x9kL4mN2pQ8rT6vW1yZ0aB5cE7gH9jK');
+        const err = new Error('Connection refused to https://api.service.com?apiKey=AIzaSyTEST_FAKE_KEY_DO_NOT_USE_ABCDEFGHIJKLM');
         const sanitizedErr = redactData(err);
         assert.equal(sanitizedErr.name, 'Error');
         assert.ok(!sanitizedErr.message.includes('AIzaSyD3x9kL4mN2pQ8rT6vW1yZ0aB5cE7gH9jK'));

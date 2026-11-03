@@ -204,7 +204,11 @@ Respond in valid JSON format matching this schema:
 
         // Provider 1: Direct Google Gemini API (if configured)
         if (geminiKey && geminiKey.trim().length > 0) {
-            const geminiModels = ['gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+            const configuredModel = (process.env.GEMINI_MODEL || '').trim();
+            const defaultGeminiModels = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+            const geminiModels = configuredModel
+                ? [configuredModel, ...defaultGeminiModels.filter(m => m !== configuredModel)]
+                : defaultGeminiModels;
             for (const model of geminiModels) {
                 const genStart = Date.now();
                 let geminiCandidateResult = null;

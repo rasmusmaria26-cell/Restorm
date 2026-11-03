@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self' http://[::1]:35729; font-src 'self' https://fonts.gstatic.com; style-src 'self' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' ws://[::1]:35729;">
+        content="default-src 'self'; script-src 'self'; font-src 'self' https://fonts.gstatic.com; style-src 'self' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self';">
     <title>Retry Storm Sentinel | Operational Backlog Monitor</title>
 
     <!-- Google Fonts with system sans-serif fallback -->
@@ -23,7 +23,7 @@
 <body>
 
     <!-- ============================================================ -->
-    /* LOGIN SCREEN — shown when not authenticated                     */
+    <!-- LOGIN SCREEN — shown when not authenticated -->
     <!-- ============================================================ -->
     <div id="login-screen" class="login-screen">
         <div class="login-panel">
@@ -78,7 +78,7 @@
                     <h2 class="login-welcome">Welcome back</h2>
                     <p class="login-welcome-sub">Sign in to access the Retry Storm Sentinel.</p>
 
-                    <form id="login-form" method="post" onsubmit="event.preventDefault()" novalidate>
+                    <form id="login-form" method="post" novalidate>
                         <div class="login-field">
                             <label for="login-username" class="login-label">Username</label>
                             <input
@@ -106,7 +106,7 @@
                                 />
                                 <button type="button" id="login-toggle-password" class="login-toggle-password" aria-label="Show password">
                                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11-8-11-8z"/>
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                                         <circle cx="12" cy="12" r="3"/>
                                     </svg>
                                 </button>
@@ -133,8 +133,8 @@
         </div>
     </div>
 
-    <!-- ============================================================ */
-    /* MAIN APP — hidden until authenticated                          */
+    <!-- ============================================================ -->
+    <!-- MAIN APP — hidden until authenticated                          -->
     <!-- ============================================================ -->
     <div id="main-app" class="main-app hidden">
 
@@ -155,9 +155,15 @@
         </nav>
         <div class="sidebar-footer">
             <div class="user-menu-wrapper">
-                <div id="userAuthInfo" class="hidden">
-                    <span id="userAuthName" class="user-role-badge"></span>
-                    <button id="btnLogout" class="btn-quiet btn-logout">Sign out</button>
+                <div id="userAuthInfo" class="hidden user-auth-card">
+                    <div class="user-chip" id="userAuthChip">
+                        <span class="user-avatar-circle" id="userAvatarCircle" aria-hidden="true">A</span>
+                        <div class="user-chip-details">
+                            <span id="userAuthName" class="user-chip-name">admin</span>
+                            <span id="userAuthRole" class="user-chip-role">Simulator admin</span>
+                        </div>
+                    </div>
+                    <button id="btnLogout" class="btn btn-quiet btn-logout" type="button">Sign out</button>
                 </div>
             </div>
         </div>
@@ -305,7 +311,8 @@
         </div>
     </div>
 
-    </div> <!-- /#main-app -->\n    <!-- Application Script (ES module) -->
+    </div> <!-- /#main-app -->
+    <!-- Application Script (ES module) -->
     <script type="module" src="app.js?v=5.2"></script>
 </body>
 

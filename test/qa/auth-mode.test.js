@@ -6,13 +6,12 @@
  * Verifies the login-based authentication strategy in app/js/api-client.js:
  *
  *   1. Production XSUAA mode: no Authorization header sent (platform session).
- *     2. Development mocked mode: Basic auth sent after login() with stored
- *      credentials (username:password).
- *     3. Credentials are stored in memory only, cleared on logout.
- *     4. Invalid credentials rejected by backend (401).
- *     5. Frontend cannot grant production privileges: roles come from backend.
- *     6. CAP mocked auth config: admin=SimulatorAdmin, bob=SupportOperator,
- *      alice=SupportViewer.
+ *   2. Development mocked mode: login sends Basic auth via POST /auth/login,
+ *      backend returns userId and roles — frontend never determines roles.
+ *   3. Credentials stored in memory only, cleared on logout.
+ *   4. Invalid credentials rejected by backend (401).
+ *   5. Frontend cannot grant roles via username — backend determines roles.
+ *   6. Production uses XSUAA exclusively.
  *
  * No browser; uses mock fetch.
  *
@@ -30,14 +29,16 @@ function capturingFetch(handlers) {
     capturedRequests = [];
     global.fetch = async (url, opts) => {
         const u = String(url);
-        const headers = opts && opts.headers ? opts.headers : {};
-        capturedRequests.push({ url: u, headers: headers, opts: opts });
+        capturedRequests.push({ url: u, headers: opts && opts.headers ? opts.headers : {} });
         for (const h of handlers) {
             if (h.match && u.includes(h.match)) {
-                return new (require('./frontend-helper.js').MockResponse)(h.response, h.status || 200);
+                const response = typeof h.response === 'function'
+                    ? h.response(opts)
+                    : h.response;
+                return new MockResponse(response, h.status || 200);
             }
         }
-        return new (require('./frontend-helper.js').MockResponse)({ value: [] }, 200);
+        return new MockResponse({ value: [] }, 200);
     };
     global.fetch.original = originalFetch;
     return () => { global.fetch = originalFetch; };
@@ -48,8 +49,54 @@ const { MockResponse } = require('./frontend-helper.js');
 describe('Authentication mode verification', () => {
 
     before(() => {
+        // Mock users for login simulation — backend is sole source of truth for roles
+        const users = {
+            alice: { password: 'alice', roles: ['SupportViewer'] },
+            bob: { password: 'bob', roles: ['SupportOperator', 'SupportViewer'] },
+            admin: { password: 'admin', roles: ['SimulatorAdmin', 'SupportOperator', 'SupportViewer'] }
+        };
+
         restoreFetch = capturingFetch([
-            { match: '/auth/login', response: { authenticated: true, userId: 'bob', roles: ['SupportOperator', 'SupportViewer'] } },
+            {
+                match: '/auth/login',
+                response: (opts) => {
+                    const authHeader = opts && opts.headers ? opts.headers['Authorization'] : null;
+                    if (authHeader && authHeader.startsWith('Basic ')) {
+                        const encoded = authHeader.split(' ')[1];
+                        const decoded = Buffer.from(encoded, 'base64').toString();
+                        const [username, password] = decoded.split(':');
+                        const user = users[username];
+                        if (user && user.password === password) {
+                            return {
+                                authenticated: true,
+                                userId: username,
+                                roles: user.roles
+                            };
+                        }
+                    }
+                    return { error: 'Unauthorized' };
+                }
+            },
+            {
+                match: '/getCurrentUser',
+                response: (opts) => {
+                    const authHeader = opts && opts.headers ? opts.headers['Authorization'] : null;
+                    if (authHeader && authHeader.startsWith('Basic ')) {
+                        const encoded = authHeader.split(' ')[1];
+                        const decoded = Buffer.from(encoded, 'base64').toString();
+                        const [username, password] = decoded.split(':');
+                        const user = users[username];
+                        if (user && user.password === password) {
+                            return {
+                                authenticated: true,
+                                userId: username,
+                                roles: user.roles
+                            };
+                        }
+                    }
+                    return { error: 'Unauthorized' };
+                }
+            },
             { match: '/auth/me', response: { authenticated: true, userId: 'bob', roles: ['SupportOperator', 'SupportViewer'] } },
             { match: '/Interfaces', response: { value: [] } },
             { match: '/Alerts', response: { value: [] } },
@@ -82,14 +129,16 @@ describe('Authentication mode verification', () => {
             const { login, apiRequest, hasCredentials, clearCredentials } = require('../../app/js/api-client.js');
 
             capturedRequests = [];
-
-            // Clear any stored credentials first
             clearCredentials();
             assert.equal(hasCredentials(), false, 'No credentials stored before login');
 
-            // Login
+            // Login as bob
             const result = await login('bob', 'bob');
-            assert.ok(result.authenticated === undefined || result.userId === 'bob', 'Login returns userId');
+            assert.equal(result.userId, 'bob', 'Login returns userId from backend');
+            assert.ok(Array.isArray(result.roles), 'Roles come from backend');
+            assert.ok(result.roles.includes('SupportOperator'), 'bob gets SupportOperator role');
+            assert.ok(result.roles.includes('SupportViewer'), 'bob gets SupportViewer role');
+            assert.ok(!result.roles.includes('SimulatorAdmin'), 'bob does NOT get SimulatorAdmin role');
             assert.ok(hasCredentials(), 'Credentials stored after login');
 
             // Make an API request - should include Basic auth
@@ -105,17 +154,38 @@ describe('Authentication mode verification', () => {
             assert.equal(decoded, 'bob:bob', 'Basic auth contains username:password');
         });
 
+        it('Frontend cannot grant roles via username - login as alice gets alice roles only', async () => {
+            const { login, hasCredentials, clearCredentials } = require('../../app/js/api-client.js');
+
+            clearCredentials();
+            assert.equal(hasCredentials(), false, 'No credentials stored before login');
+
+            // Login as alice - must get alice's roles only
+            const alice = await login('alice', 'alice');
+            assert.equal(alice.userId, 'alice', 'Login returns alice userId');
+            assert.ok(alice.roles.includes('SupportViewer'), 'alice gets SupportViewer role');
+            assert.ok(!alice.roles.includes('SimulatorAdmin'), 'alice does NOT get SimulatorAdmin role');
+            assert.ok(!alice.roles.includes('SupportOperator'), 'alice does NOT get SupportOperator role');
+
+            clearCredentials();
+            assert.equal(hasCredentials(), false, 'Credentials cleared after logout');
+
+            // Login as bob - must get bob's roles only
+            const bob = await login('bob', 'bob');
+            assert.equal(bob.userId, 'bob', 'Login returns bob userId');
+            assert.ok(bob.roles.includes('SupportOperator'), 'bob gets SupportOperator role');
+            assert.ok(bob.roles.includes('SupportViewer'), 'bob gets SupportViewer role');
+            assert.ok(!bob.roles.includes('SimulatorAdmin'), 'bob does NOT get SimulatorAdmin role');
+        });
+
         it('login with wrong password is rejected', async () => {
             const { login } = require('../../app/js/api-client.js');
 
-            // Override fetch to return 401 for login
             const originalFetch = global.fetch;
-            let callCount = 0;
             global.fetch = async (url, opts) => {
-                callCount++;
                 const u = String(url);
                 capturedRequests.push({ url: u, headers: opts && opts.headers ? opts.headers : {} });
-                if (u.includes('/auth/login') && callCount === 1) {
+                if (u.includes('/getCurrentUser')) {
                     return new MockResponse({ error: 'Unauthorized' }, 401);
                 }
                 return new MockResponse({ value: [] }, 200);
@@ -134,18 +204,13 @@ describe('Authentication mode verification', () => {
         });
 
         it('logout clears credentials', async () => {
-            const { login, logout, hasCredentials, apiRequest } = require('../../app/js/api-client.js');
+            const { login, logout, hasCredentials } = require('../../app/js/api-client.js');
 
             await login('alice', 'alice');
             assert.ok(hasCredentials(), 'Credentials stored after login');
 
             logout();
             assert.equal(hasCredentials(), false, 'Credentials cleared after logout');
-
-            // After logout, no Authorization header should be sent
-            capturedRequests = [];
-            // apiRequest would fail with 401 since no credentials, but we just check no auth header
-            // The key assertion is that credentials are cleared
         });
     });
 

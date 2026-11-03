@@ -250,8 +250,34 @@ function updateRoleUI() {
     const canResolve = isAdmin || isOperator;
     const canReset = isAdmin;
 
-    if (roleBadge) roleBadge.textContent = isAdmin ? 'Simulator admin' : isOperator ? 'Support operator' : isViewer ? 'Support viewer' : '';
-    setCurrentUser(currentUser);
+    const userAuthInfo = document.getElementById('userAuthInfo');
+    const userAuthName = document.getElementById('userAuthName');
+    const userAvatarCircle = document.getElementById('userAvatarCircle');
+    const userAuthRole = document.getElementById('userAuthRole');
+    if (userAuthInfo) {
+        if (isAuthenticated) {
+            userAuthInfo.classList.remove('hidden');
+            userAuthInfo.style.display = 'flex';
+        } else {
+            userAuthInfo.classList.add('hidden');
+            userAuthInfo.style.display = 'none';
+        }
+    }
+    if (userAvatarCircle) {
+        const initial = (userName.charAt(0) || 'U').toUpperCase();
+        userAvatarCircle.textContent = initial;
+    }
+    const roleLabel = isAdmin ? 'Simulator admin' : isOperator ? 'Support operator' : isViewer ? 'Support viewer' : '';
+    if (userAuthRole) {
+        userAuthRole.textContent = roleLabel ? `(${roleLabel})` : '';
+    }
+    if (userAuthName) {
+        if (userAuthRole) {
+            userAuthName.textContent = userName;
+        } else {
+            userAuthName.textContent = roleLabel ? `${userName} (${roleLabel})` : userName;
+        }
+    }
 
     const hint = document.getElementById('scenariosRoleHint');
     if (hint) {
@@ -744,8 +770,11 @@ function renderExplainContent(explanation) {
 /* ------------------------------------------------------------------ */
 
 function initializeEvents() {
-    // Router: render the current page on every route change
+    // Router: render the current page on every route change (only when authenticated)
     onRouteChange((route, params) => {
+        if (!getState().isAuthenticated) {
+            return;
+        }
         const routeName = (typeof route === 'object' && route !== null) ? (route.name || 'overview') : (route || 'overview');
         renderRoute(routeName, params);
 
@@ -793,6 +822,16 @@ function initializeEvents() {
     // Login form submit
     if (loginForm) {
         loginForm.addEventListener('submit', handleLogin);
+    }
+
+    // Toggle password visibility
+    const togglePasswordBtn = document.getElementById('login-toggle-password');
+    if (togglePasswordBtn && loginPassword) {
+        togglePasswordBtn.addEventListener('click', () => {
+            const isPassword = loginPassword.type === 'password';
+            loginPassword.type = isPassword ? 'text' : 'password';
+            togglePasswordBtn.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+        });
     }
 
     // Logout button (in sidebar)
@@ -919,8 +958,14 @@ async function handleLogin(e) {
         setIsAuthenticated(true);
 
         // Hide login, show main app
-        if (loginScreen) loginScreen.style.display = 'none';
-        if (mainApp) mainApp.style.display = 'block';
+        if (loginScreen) {
+            loginScreen.classList.add('hidden');
+            loginScreen.style.display = 'none';
+        }
+        if (mainApp) {
+            mainApp.classList.remove('hidden');
+            mainApp.style.display = 'block';
+        }
 
         // Update UI for authenticated user
         updateRoleUI();
@@ -928,7 +973,15 @@ async function handleLogin(e) {
         // Initial data load
         await refreshData();
     } catch (err) {
-        const msg = err.status === 401 ? 'Invalid username or password.' : `Login failed (${err.status}). Please try again.`;
+        if (loginScreen) {
+            loginScreen.classList.remove('hidden');
+            loginScreen.style.display = 'flex';
+        }
+        if (mainApp) {
+            mainApp.classList.add('hidden');
+            mainApp.style.display = 'none';
+        }
+        const msg = err.status === 401 ? 'Invalid username or password.' : `Login failed (${err.status || err.message}). Please try again.`;
         if (loginError) {
             loginError.textContent = msg;
             loginError.style.display = 'block';
@@ -946,13 +999,24 @@ async function handleLogout() {
     storeLogout();
 
     // Hide main app, show login
-    if (mainApp) mainApp.style.display = 'none';
-    if (loginScreen) loginScreen.style.display = 'flex';
+    if (mainApp) {
+        mainApp.classList.add('hidden');
+        mainApp.style.display = 'none';
+    }
+    if (loginScreen) {
+        loginScreen.classList.remove('hidden');
+        loginScreen.style.display = 'flex';
+    }
 
     // Clear form
     if (loginUsername) loginUsername.value = '';
     if (loginPassword) loginPassword.value = '';
-    if (loginError) loginError.style.display = 'none';
+    if (loginError) {
+        loginError.textContent = '';
+        loginError.style.display = 'none';
+    }
+
+    updateRoleUI();
 }
 
 /* ------------------------------------------------------------------ */
@@ -967,12 +1031,25 @@ async function bootstrap() {
 
     if (stored) {
         setIsAuthenticated(true);
-        if (loginScreen) loginScreen.style.display = 'none';
-        if (mainApp) mainApp.style.display = 'block';
+        if (loginScreen) {
+            loginScreen.classList.add('hidden');
+            loginScreen.style.display = 'none';
+        }
+        if (mainApp) {
+            mainApp.classList.remove('hidden');
+            mainApp.style.display = 'block';
+        }
+        updateRoleUI();
     } else {
         // No credentials stored, show login
-        if (loginScreen) loginScreen.style.display = 'flex';
-        if (mainApp) mainApp.style.display = 'none';
+        if (loginScreen) {
+            loginScreen.classList.remove('hidden');
+            loginScreen.style.display = 'flex';
+        }
+        if (mainApp) {
+            mainApp.classList.add('hidden');
+            mainApp.style.display = 'none';
+        }
     }
 
     // Start router

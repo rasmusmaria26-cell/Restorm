@@ -16,10 +16,10 @@ const EXECUTION_POLICY = {
     TOOL_TIMEOUT_MS: 5000,
 
     // LLM request timeout in milliseconds
-    MODEL_TIMEOUT_MS: 15000,
+    MODEL_TIMEOUT_MS: 12000,
 
     // Total end-to-end investigation deadline in milliseconds
-    TOTAL_INVESTIGATION_TIMEOUT_MS: 15000,
+    TOTAL_INVESTIGATION_TIMEOUT_MS: 20000,
 
     // Hard ceiling on historical telemetry records returned to context
     MAX_SNAPSHOTS_LIMIT: 20,
