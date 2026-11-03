@@ -62,4 +62,13 @@ service MonitoringService @(requires: 'authenticated-user') {
     // Administrative database reset
     @(requires: 'SimulatorAdmin')
     action resetToCleanSeed() returns String;
+
+    // Get authenticated user identity and roles from CAP context
+    @(requires: 'authenticated-user')
+    action getCurrentUser() returns UserInfo;
+
+    entity UserInfo {
+        key userId : String;
+        roles : Array of String;
+    };
 }

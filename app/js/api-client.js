@@ -144,24 +144,25 @@ async function readResponseBody(res) {
 
 /**
  * Authenticate against the development mocked auth backend.
- * Sends Basic auth credentials; the backend validates them and returns
- * the authenticated user's id and roles.
+ * Sends Basic auth credentials to /auth/login; the backend CDS mocked auth
+ * validates them and returns the user's id and roles. The frontend never
+ * determines roles client-side — they come exclusively from the backend.
  *
  * @param {string} username
  * @param {string} password
  * @returns {Promise<{ userId: string, roles: string[] }>}
  */
 export async function login(username, password) {
-    const headers = {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': 'Basic ' + btoa(`${String(username || '').trim()}:${String(password || '')}`)
-    };
+    const trimmedUser = String(username || '').trim();
+    const trimmedPass = String(password || '');
+    const authHeader = 'Basic ' + btoa(`${trimmedUser}:${trimmedPass}`);
 
-    const res = await fetch(`${BASE_URL}/../auth/login`, {
+    const res = await fetch(`${BASE_URL}/getCurrentUser`, {
         method: 'POST',
-        headers,
-        body: JSON.stringify({ username: String(username || '').trim(), password: String(password || '') })
+        headers: {
+            'Accept': 'application/json',
+            'Authorization': authHeader
+        }
     });
 
     if (!res.ok) {
@@ -169,16 +170,18 @@ export async function login(username, password) {
     }
 
     const data = await readResponseBody(res);
-    if (!data || !data.authenticated || !data.userId) {
-        throw Object.assign(new Error('Login failed: invalid response'), { status: 401 });
+    if (!data || !data.userId) {
+        throw Object.assign(new Error('Login failed: invalid response'), { status: res.status });
     }
 
     // Store credentials for subsequent requests.
-    setCredentials(data.userId, password);
+    setCredentials(trimmedUser, trimmedPass);
 
+    // Roles come exclusively from the backend — never from client-side
+    // mapping or request data.
     return {
         userId: data.userId,
-        roles: data.roles || []
+        roles: Array.isArray(data.roles) ? data.roles : []
     };
 }
 

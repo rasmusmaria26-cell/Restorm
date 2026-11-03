@@ -4,16 +4,16 @@
  * Renders:
  *   - KPI cards: total interfaces, open alerts, critical alerts, high alerts,
  *     total pending, total retries (computed from live backend data)
- *   - Headline banner showing worst status across the estate
- *   - Interface cards grid: latest pending, retry count, status badge, sparkline
- *   - Active incident summary: alerts grouped by interface+ruleCode,
- *     sorted by severity then newest
+ *   - Headline banner showing highest open severity across estate in a slim strip
+ *   - Interface cards grid: sorted by severity (critical/high first, healthy last),
+ *     unhealthy interfaces get full card with sparkline, healthy get compact rows
+ *   - Active incident summary: alerts grouped by interface+ruleCode
+ *   - Bottom section: Backlog trend chart and Recent retries table
  *
  * All metrics computed from real backend data via fetchInterfaces + fetchAlerts.
  *
- * Exports render(container, context) and cleanup().
- * context provides: { params, getState, setState, api, formatShortTime,
- *   FRIENDLY_RULE_TITLES, SEVERITY_WEIGHT, userRoles, currentUser }
+ * Exports render(container, context), computeKPIs(interfaces, alerts),
+ * and groupIncidents(alerts, interfaces).
  */
 
 import { LoadingState } from '../components/LoadingState.js';
@@ -22,8 +22,6 @@ import { EmptyState } from '../components/EmptyState.js';
 import { Card } from '../components/Card.js';
 import { Button } from '../components/Button.js';
 import { Sparkline } from '../components/Sparkline.js';
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
@@ -34,6 +32,42 @@ function latestSnapshot(iface) {
     return snaps.length ? snaps[snaps.length - 1] : null;
 }
 
+/**
+ * Determine interface operational status matching deterministic detection rules:
+ * - Rule A: EXCESSIVE_RETRIES (Critical)
+ * - Rule B: QUEUE_GROWTH (High)
+ * - Rule C: OLD_MESSAGE_AGE (High)
+ * - Rule D: RECOVERY_STALLED (High)
+ * Also checks any open alerts for this interface.
+ */
+function getInterfaceStatus(iface, alerts = []) {
+    // 1. Check open alerts directly linked to this interface
+    if (alerts && alerts.length) {
+        const ifaceAlerts = alerts.filter(a => a.interface_ID === iface.ID && a.status === 'Open');
+        if (ifaceAlerts.some(a => a.severity === 'Critical')) return 'critical';
+        if (ifaceAlerts.some(a => a.severity === 'High')) return 'high';
+    }
+
+    // 2. Evaluate latest snapshot against configured thresholds
+    const snap = latestSnapshot(iface);
+    if (!snap) return 'healthy';
+    const pending = Number(snap.pendingCount) || 0;
+    const retry = Number(snap.retryAttempts) || 0;
+    const age = Number(snap.oldestPendingAgeSeconds) || 0;
+    const limit = Number(iface.queueGrowthLimit) || 200;
+    const retryLimit = Number(iface.maxRetryThreshold) || 100;
+    const ageLimit = Number(iface.oldMessageAgeLimitSeconds) || 600;
+
+    // Rule A: Excessive retries -> Critical
+    if (retry >= retryLimit) return 'critical';
+    // Rules B & C: Queue growth or old message age -> High
+    if (pending >= limit || age >= ageLimit) return 'high';
+    // Warning threshold (70%) -> High (amber)
+    if (pending >= limit * 0.7 || retry >= retryLimit * 0.7 || age >= ageLimit * 0.7) return 'high';
+
+    return 'healthy';
+}
+
 function statusForSnapshot(snap, iface) {
     if (!snap) return 'healthy';
     const pending = Number(snap.pendingCount) || 0;
@@ -42,13 +76,14 @@ function statusForSnapshot(snap, iface) {
     const limit = Number(iface.queueGrowthLimit) || 200;
     const retryLimit = Number(iface.maxRetryThreshold) || 100;
     const ageLimit = Number(iface.oldMessageAgeLimitSeconds) || 600;
-    if (pending >= limit || retry >= retryLimit || age >= ageLimit) return 'critical';
+    if (retry >= retryLimit) return 'critical';
+    if (pending >= limit || age >= ageLimit) return 'high';
     if (pending >= limit * 0.7 || retry >= retryLimit * 0.7 || age >= ageLimit * 0.7) return 'high';
     return 'healthy';
 }
 
 function statusLabel(status) {
-    const map = { healthy: 'Healthy', high: 'Warning', critical: 'Critical' };
+    const map = { healthy: 'Healthy', high: 'High', critical: 'Critical' };
     return map[status] || 'Healthy';
 }
 
@@ -57,14 +92,15 @@ function severityRank(sev) {
     return w[sev] || 0;
 }
 
-function worstStatus(statuses) {
-    if (!statuses.length) return 'healthy';
-    const order = { critical: 3, high: 2, healthy: 1 };
-    let worst = 'healthy';
-    for (const s of statuses) {
-        if (order[s] > (order[worst] || 0)) worst = s;
-    }
-    return worst;
+function computeBannerSeverity(kpis, interfaces, alerts) {
+    if (kpis.criticalAlerts > 0) return 'critical';
+    if (kpis.highAlerts > 0) return 'high';
+    if (kpis.openAlerts > 0) return 'high';
+
+    const ifaceStatuses = interfaces.map(i => getInterfaceStatus(i, alerts));
+    if (ifaceStatuses.includes('critical')) return 'critical';
+    if (ifaceStatuses.includes('high')) return 'high';
+    return 'healthy';
 }
 
 function formatAge(seconds) {
@@ -148,47 +184,65 @@ export function groupIncidents(alerts, interfaces) {
 /* ------------------------------------------------------------------ */
 
 function renderKpiCard(label, value, sub, status = 'healthy') {
-    const card = Card({ className: `kpi-card is-${status}` });
+    const card = document.createElement('div');
+    card.className = `kpi-card is-${status}`;
     card.innerHTML = `
         <div class="kpi-label">${escapeHtml(label)}</div>
         <div class="kpi-value">${escapeHtml(value)}</div>
-        ${sub ? `<div class="kpi-sub">${escapeHtml(sub)}</div>` : ''}
+        <div class="kpi-sub">${escapeHtml(sub || ' ')}</div>
     `;
     return card;
 }
 
-function renderHeadline(kpis, worst) {
-    const card = Card({ className: `headline-card is-${worst}` });
-    const titles = {
-        critical: 'Critical incidents detected — immediate attention required',
-        high: 'High-severity backlog growth across interfaces',
-        healthy: 'All interfaces operating within thresholds'
-    };
-    const subs = {
-        critical: `${kpis.criticalAlerts} critical, ${kpis.highAlerts} high open alerts`,
-        high: `${kpis.highAlerts} high open alerts`,
-        healthy: `No active critical or high alerts across ${kpis.totalInterfaces} interfaces`
+function renderHeadline(kpis, severity) {
+    const strip = document.createElement('div');
+    strip.className = `headline-strip is-${severity}`;
+
+    let iconSvg = '';
+    if (severity === 'critical') {
+        iconSvg = `<svg class="headline-icon is-critical" viewBox="0 0 20 20" fill="currentColor" width="20" height="20" aria-hidden="true">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"/>
+        </svg>`;
+    } else if (severity === 'high') {
+        iconSvg = `<svg class="headline-icon is-high" viewBox="0 0 20 20" fill="currentColor" width="20" height="20" aria-hidden="true">
+            <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+        </svg>`;
+    } else {
+        iconSvg = `<svg class="headline-icon is-healthy" viewBox="0 0 20 20" fill="currentColor" width="20" height="20" aria-hidden="true">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/>
+        </svg>`;
+    }
+
+    const messages = {
+        critical: `Critical incidents detected — ${kpis.criticalAlerts} critical, ${kpis.highAlerts} high open alert${kpis.openAlerts > 1 ? 's' : ''}`,
+        high: `High-severity backlog growth across interfaces — ${kpis.highAlerts} high open alert${kpis.highAlerts > 1 ? 's' : ''}`,
+        healthy: `All ${kpis.totalInterfaces} interfaces operating normally within thresholds`
     };
 
-    card.innerHTML = `
-        <div class="headline-content">
-            <h2 class="headline-title">${escapeHtml(titles[worst] || titles.healthy)}</h2>
-            <p class="headline-subtitle">${escapeHtml(subs[worst] || subs.healthy)}</p>
+    const text = messages[severity] || messages.healthy;
+
+    strip.innerHTML = `
+        <div class="headline-left">
+            <span class="headline-icon-wrap">${iconSvg}</span>
+            <span class="headline-text">${escapeHtml(text)}</span>
         </div>
-        <div class="headline-actions">
-            <div class="kpi-summary">
-                <div><strong>${kpis.openAlerts}</strong> open</div>
-                <div><strong>${kpis.totalPending}</strong> pending</div>
-            </div>
-            <button id="btnRefreshOverview" class="btn btn-quiet" type="button" title="Refresh data">Refresh</button>
+        <div class="headline-right">
+            <button id="btnViewIncidents" class="btn btn-sm btn-harbor" type="button">View incident${kpis.openAlerts === 1 ? '' : 's'}</button>
         </div>
     `;
-    return card;
+
+    const viewBtn = strip.querySelector('#btnViewIncidents');
+    if (viewBtn) {
+        viewBtn.addEventListener('click', () => {
+            window.location.hash = '#incidents';
+        });
+    }
+
+    return strip;
 }
 
-function renderInterfaceCard(iface, snap) {
-    const card = Card({ className: `interface-card${snap && statusForSnapshot(snap, iface) !== 'healthy' ? ' has-alert' : ''}` });
-    const status = snap ? statusForSnapshot(snap, iface) : 'healthy';
+function renderInterfaceCard(iface, snap, status) {
+    const card = Card({ className: `interface-card${status !== 'healthy' ? ' has-alert' : ''}` });
     const pending = snap ? Number(snap.pendingCount) || 0 : 0;
     const retries = snap ? Number(snap.retryAttempts) || 0 : 0;
     const age = snap ? Number(snap.oldestPendingAgeSeconds) || 0 : 0;
@@ -197,6 +251,10 @@ function renderInterfaceCard(iface, snap) {
     const name = escapeHtml(iface.name || 'Unnamed Interface');
     const path = escapeHtml(`${iface.sourceSystem || '—'} → ${iface.targetSystem || '—'}`);
     const schedule = escapeHtml(iface.expectedSchedule || '—');
+
+    const sparklineContent = pending === 0
+        ? `<div class="no-backlog-placeholder"><span class="no-backlog-badge">No backlog</span></div>`
+        : Sparkline({ snapshots: iface.snapshots || [], limitValue: Number(iface.queueGrowthLimit) || 200, width: 200, height: 40 }).outerHTML;
 
     card.innerHTML = `
         <div class="interface-card-header">
@@ -211,7 +269,7 @@ function renderInterfaceCard(iface, snap) {
         <div class="pressure-block">
             <div class="pressure-sparkline-wrap">
                 <div class="pressure-label">pending backlog</div>
-                ${Sparkline({ snapshots: iface.snapshots || [], limitValue: Number(iface.queueGrowthLimit) || 200, width: 200, height: 40 }).outerHTML}
+                ${sparklineContent}
             </div>
             <div class="pressure-summary">
                 <div class="pressure-count${overLimit ? ' is-over-limit' : ''}">${formatNumber(pending)}</div>
@@ -219,19 +277,60 @@ function renderInterfaceCard(iface, snap) {
             </div>
         </div>
         <div class="interface-footer-caption">
-            <span>${formatNumber(retries)} retries</span>
-            <span>${age ? formatAge(age) : '—'} oldest</span>
-            <span>${schedule}</span>
+            <span class="footer-stat">${formatNumber(retries)} retries</span>
+            <span class="footer-sep" aria-hidden="true">•</span>
+            <span class="footer-stat">${age ? formatAge(age) : '—'} oldest</span>
+            <span class="footer-sep" aria-hidden="true">•</span>
+            <span class="footer-stat">${schedule}</span>
         </div>
     `;
 
-    // Make card clickable -> detail page
     card.style.cursor = 'pointer';
     card.addEventListener('click', () => {
         window.location.hash = `#interface/${iface.ID}`;
     });
 
     return card;
+}
+
+function renderInterfaceCompactRow(iface, snap) {
+    const row = document.createElement('div');
+    row.className = 'interface-compact-row';
+    const retries = snap ? Number(snap.retryAttempts) || 0 : 0;
+    const age = snap ? Number(snap.oldestPendingAgeSeconds) || 0 : 0;
+    const schedule = escapeHtml(iface.expectedSchedule || '—');
+    const name = escapeHtml(iface.name || 'Unnamed Interface');
+    const path = escapeHtml(`${iface.sourceSystem || '—'} → ${iface.targetSystem || '—'}`);
+
+    row.innerHTML = `
+        <div class="compact-main">
+            <span class="status-dot healthy-dot" aria-hidden="true"></span>
+            <div class="compact-titles">
+                <span class="compact-name">${name}</span>
+                <span class="compact-path">${path}</span>
+            </div>
+        </div>
+        <div class="compact-backlog">
+            <span class="no-backlog-pill">No backlog</span>
+        </div>
+        <div class="compact-telemetry">
+            <span class="footer-stat">${formatNumber(retries)} retries</span>
+            <span class="footer-sep" aria-hidden="true">•</span>
+            <span class="footer-stat">${age ? formatAge(age) : '—'} oldest</span>
+            <span class="footer-sep" aria-hidden="true">•</span>
+            <span class="footer-stat">${schedule}</span>
+        </div>
+        <span class="status-badge healthy">
+            <span class="status-dot"></span>Healthy
+        </span>
+    `;
+
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', () => {
+        window.location.hash = `#interface/${iface.ID}`;
+    });
+
+    return row;
 }
 
 function renderIncidentCard(incident) {
@@ -262,18 +361,167 @@ function renderIncidentCard(incident) {
     return card;
 }
 
+function renderBacklogTrendCard(interfaces) {
+    const card = Card({ className: 'trend-chart-card' });
+
+    let allPoints = [];
+    const maxSnapshots = Math.max(...interfaces.map(i => (i.snapshots || []).length), 0);
+
+    if (maxSnapshots > 0) {
+        for (let idx = 0; idx < maxSnapshots; idx++) {
+            let totalPending = 0;
+            let timeLabel = '';
+            for (const iface of interfaces) {
+                const snaps = iface.snapshots || [];
+                if (snaps[idx]) {
+                    totalPending += Number(snaps[idx].pendingCount) || 0;
+                    if (!timeLabel && snaps[idx].snapshotTime) {
+                        timeLabel = snaps[idx].snapshotTime;
+                    }
+                }
+            }
+            allPoints.push({ index: idx, pending: totalPending, time: timeLabel });
+        }
+    } else {
+        allPoints = [{ index: 0, pending: 0, time: 'now' }];
+    }
+
+    const maxVal = Math.max(...allPoints.map(p => p.pending), 100);
+    const chartW = 480;
+    const chartH = 140;
+    const padL = 36;
+    const padR = 16;
+    const padT = 16;
+    const padB = 26;
+    const plotW = chartW - padL - padR;
+    const plotH = chartH - padT - padB;
+
+    const coords = allPoints.map((p, i) => {
+        const x = allPoints.length === 1
+            ? padL + plotW / 2
+            : padL + (i / (allPoints.length - 1)) * plotW;
+        const y = padT + plotH - (p.pending / maxVal) * plotH;
+        return { x: Math.round(x), y: Math.round(y), p };
+    });
+
+    const pointsStr = coords.map(c => `${c.x},${c.y}`).join(' ');
+    const areaPoints = [
+        `${coords[0].x},${padT + plotH}`,
+        ...coords.map(c => `${c.x},${c.y}`),
+        `${coords[coords.length - 1].x},${padT + plotH}`
+    ].join(' ');
+
+    const latestVal = allPoints.length ? allPoints[allPoints.length - 1].pending : 0;
+
+    card.innerHTML = `
+        <div class="card-header-clean">
+            <div class="header-titles">
+                <h4 class="card-title-sm">Backlog trend</h4>
+                <p class="card-subtitle-sm">Aggregate queue accumulation across estate</p>
+            </div>
+            <span class="trend-current-badge">${formatNumber(latestVal)} total pending</span>
+        </div>
+        <div class="chart-container">
+            <svg class="trend-chart-svg" viewBox="0 0 ${chartW} ${chartH}" preserveAspectRatio="none">
+                <defs>
+                    <linearGradient id="backlogTrendGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" stop-color="#1B365D" stop-opacity="0.25"/>
+                        <stop offset="100%" stop-color="#1B365D" stop-opacity="0.02"/>
+                    </linearGradient>
+                </defs>
+                <line x1="${padL}" y1="${padT}" x2="${chartW - padR}" y2="${padT}" stroke="#E5E7EB" stroke-dasharray="3,3" />
+                <line x1="${padL}" y1="${padT + plotH / 2}" x2="${chartW - padR}" y2="${padT + plotH / 2}" stroke="#E5E7EB" stroke-dasharray="3,3" />
+                <line x1="${padL}" y1="${padT + plotH}" x2="${chartW - padR}" y2="${padT + plotH}" stroke="#D1D5DB" />
+
+                <text x="${padL - 6}" y="${padT + 4}" font-size="10" fill="#9CA3AF" text-anchor="end">${maxVal}</text>
+                <text x="${padL - 6}" y="${padT + plotH / 2 + 3}" font-size="10" fill="#9CA3AF" text-anchor="end">${Math.round(maxVal / 2)}</text>
+                <text x="${padL - 6}" y="${padT + plotH + 3}" font-size="10" fill="#9CA3AF" text-anchor="end">0</text>
+
+                <polygon points="${areaPoints}" fill="url(#backlogTrendGrad)" />
+                <polyline points="${pointsStr}" fill="none" stroke="#1B365D" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+
+                ${coords.map(c => `
+                    <circle cx="${c.x}" cy="${c.y}" r="3.5" fill="#FFFFFF" stroke="#1B365D" stroke-width="2">
+                        <title>${c.p.pending} pending</title>
+                    </circle>
+                `).join('')}
+
+                <text x="${padL}" y="${chartH - 8}" font-size="10" fill="#9CA3AF" text-anchor="start">T-10</text>
+                <text x="${padL + plotW / 2}" y="${chartH - 8}" font-size="10" fill="#9CA3AF" text-anchor="middle">T-5</text>
+                <text x="${chartW - padR}" y="${chartH - 8}" font-size="10" fill="#9CA3AF" text-anchor="end">Now</text>
+            </svg>
+        </div>
+    `;
+
+    return card;
+}
+
+function renderRecentRetriesCard(interfaces, alerts) {
+    const card = Card({ className: 'recent-retries-card' });
+
+    const rowsData = [...interfaces].map(iface => {
+        const snap = latestSnapshot(iface);
+        const retries = snap ? Number(snap.retryAttempts) || 0 : 0;
+        const pending = snap ? Number(snap.pendingCount) || 0 : 0;
+        const age = snap ? Number(snap.oldestPendingAgeSeconds) || 0 : 0;
+        const status = getInterfaceStatus(iface, alerts);
+        return { iface, snap, retries, pending, age, status };
+    }).sort((a, b) => b.retries - a.retries || b.pending - a.pending);
+
+    card.innerHTML = `
+        <div class="card-header-clean">
+            <div class="header-titles">
+                <h4 class="card-title-sm">Recent retries</h4>
+                <p class="card-subtitle-sm">Interface retry pressure &amp; delivery status</p>
+            </div>
+        </div>
+        <div class="table-wrap-clean">
+            <table class="recent-retries-table">
+                <thead>
+                    <tr>
+                        <th>Interface</th>
+                        <th>Target</th>
+                        <th class="text-right">Retries</th>
+                        <th class="text-right">Oldest</th>
+                        <th class="text-right">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsData.map(r => `
+                        <tr class="clickable-row" data-id="${escapeHtml(r.iface.ID)}">
+                            <td class="font-medium">${escapeHtml(r.iface.name)}</td>
+                            <td class="text-muted">${escapeHtml(r.iface.targetSystem || '—')}</td>
+                            <td class="text-right font-medium${r.retries > 0 ? ' text-amber' : ''}">${formatNumber(r.retries)}</td>
+                            <td class="text-right text-muted">${r.age ? formatAge(r.age) : '—'}</td>
+                            <td class="text-right">
+                                <span class="status-badge ${r.status}">
+                                    <span class="status-dot"></span>${statusLabel(r.status)}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    card.querySelectorAll('.clickable-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const id = row.getAttribute('data-id');
+            if (id) window.location.hash = `#interface/${id}`;
+        });
+    });
+
+    return card;
+}
+
 /* ------------------------------------------------------------------ */
 /* Page render                                                        */
 /* ------------------------------------------------------------------ */
 
 export function render(container, context = {}) {
     const {
-        api,
-        formatShortTime,
-        FRIENDLY_RULE_TITLES,
-        SEVERITY_WEIGHT,
-        userRoles,
-        currentUser
+        api
     } = context;
 
     container.innerHTML = '';
@@ -328,34 +576,28 @@ export function render(container, context = {}) {
 
         const kpis = computeKPIs(interfaces, alerts);
         const incidents = groupIncidents(alerts, interfaces);
-        const worst = worstStatus(interfaces.map(i => {
-            const s = latestSnapshot(i);
-            return s ? statusForSnapshot(s, i) : 'healthy';
-        }));
+        const bannerSeverity = computeBannerSeverity(kpis, interfaces, alerts);
 
-        // --- KPI strip ---
+        // --- KPI strip (Equal height, biggest number, small label above) ---
         const kpiStrip = document.createElement('div');
         kpiStrip.className = 'kpi-strip';
         kpiStrip.style.display = 'grid';
         kpiStrip.style.gridTemplateColumns = 'repeat(auto-fit, minmax(150px, 1fr))';
         kpiStrip.style.gap = '12px';
-        kpiStrip.style.marginBottom = '8px';
+        kpiStrip.style.marginBottom = '16px';
 
-        kpiStrip.appendChild(renderKpiCard('Interfaces', kpis.totalInterfaces));
-        kpiStrip.appendChild(renderKpiCard('Open Alerts', kpis.openAlerts, kpis.criticalAlerts > 0 ? `${kpis.criticalAlerts} critical` : null, kpis.criticalAlerts > 0 ? 'critical' : 'healthy'));
-        kpiStrip.appendChild(renderKpiCard('Critical', kpis.criticalAlerts, kpis.criticalAlerts > 0 ? 'requires attention' : null, 'critical'));
-        kpiStrip.appendChild(renderKpiCard('High', kpis.highAlerts, kpis.highAlerts > 0 ? 'backlog growth' : null, kpis.highAlerts > 0 ? 'high' : 'healthy'));
-        kpiStrip.appendChild(renderKpiCard('Pending', formatNumber(kpis.totalPending), 'across latest snapshots'));
-        kpiStrip.appendChild(renderKpiCard('Retries', formatNumber(kpis.totalRetries), 'retry attempts total'));
+        kpiStrip.appendChild(renderKpiCard('Interfaces', kpis.totalInterfaces, 'monitored endpoints'));
+        kpiStrip.appendChild(renderKpiCard('Open Alerts', kpis.openAlerts, kpis.criticalAlerts > 0 ? `${kpis.criticalAlerts} critical` : (kpis.highAlerts > 0 ? `${kpis.highAlerts} high` : 'healthy estate'), kpis.criticalAlerts > 0 ? 'critical' : (kpis.highAlerts > 0 ? 'high' : 'healthy')));
+        kpiStrip.appendChild(renderKpiCard('Critical', kpis.criticalAlerts, kpis.criticalAlerts > 0 ? 'requires attention' : 'none active', kpis.criticalAlerts > 0 ? 'critical' : 'healthy'));
+        kpiStrip.appendChild(renderKpiCard('High', kpis.highAlerts, kpis.highAlerts > 0 ? 'backlog growth' : 'none active', kpis.highAlerts > 0 ? 'high' : 'healthy'));
+        kpiStrip.appendChild(renderKpiCard('Pending', formatNumber(kpis.totalPending), 'latest snapshots'));
+        kpiStrip.appendChild(renderKpiCard('Retries', formatNumber(kpis.totalRetries), 'attempts total'));
         shell.appendChild(kpiStrip);
 
-        // --- Headline ---
-        shell.appendChild(renderHeadline(kpis, worst));
+        // --- Slim Headline Banner (Single line, severity icon, left aligned, View incident button) ---
+        shell.appendChild(renderHeadline(kpis, bannerSeverity));
 
-        const refreshBtn = shell.querySelector('#btnRefreshOverview');
-        if (refreshBtn) refreshBtn.addEventListener('click', load);
-
-        // --- Control board grid ---
+        // --- Control board grid (Interface Status + Active Incidents) ---
         const board = document.createElement('div');
         board.className = 'control-board-grid';
         shell.appendChild(board);
@@ -369,22 +611,54 @@ export function render(container, context = {}) {
         ifaceHeader.innerHTML = '<h3 class="column-title">Interface Status</h3><span class="column-count">' + interfaces.length + '</span>';
         leftCol.appendChild(ifaceHeader);
 
-        const cardsWrap = document.createElement('div');
-        cardsWrap.className = 'interface-cards-grid';
-        cardsWrap.style.display = 'grid';
-        cardsWrap.style.gridTemplateColumns = 'repeat(auto-fill, minmax(260px, 1fr))';
-        cardsWrap.style.gap = '16px';
-        cardsWrap.style.marginTop = '12px';
+        // Sort interfaces by severity: critical -> high -> healthy, then name
+        const severityRankOrder = { critical: 3, high: 2, healthy: 1 };
+        const sortedInterfaces = [...interfaces].sort((a, b) => {
+            const sevA = getInterfaceStatus(a, alerts);
+            const sevB = getInterfaceStatus(b, alerts);
+            const diff = (severityRankOrder[sevB] || 0) - (severityRankOrder[sevA] || 0);
+            if (diff !== 0) return diff;
+            return (a.name || '').localeCompare(b.name || '');
+        });
+
+        const unhealthyInterfaces = sortedInterfaces.filter(i => getInterfaceStatus(i, alerts) !== 'healthy');
+        const healthyInterfaces = sortedInterfaces.filter(i => getInterfaceStatus(i, alerts) === 'healthy');
 
         if (!interfaces.length) {
-            cardsWrap.appendChild(EmptyState({ title: 'No interfaces monitored', subtitle: 'Registered integration endpoints will appear here.' }));
+            leftCol.appendChild(EmptyState({ title: 'No interfaces monitored', subtitle: 'Registered integration endpoints will appear here.' }));
         } else {
-            for (const iface of interfaces) {
-                const snap = latestSnapshot(iface);
-                cardsWrap.appendChild(renderInterfaceCard(iface, snap));
+            // Unhealthy interfaces get full card with sparkline in a 3-column grid
+            if (unhealthyInterfaces.length > 0) {
+                const unhealthyGrid = document.createElement('div');
+                unhealthyGrid.className = `interface-cards-grid${unhealthyInterfaces.length === 1 ? ' is-single-card' : (unhealthyInterfaces.length === 2 ? ' is-two-cards' : '')}`;
+                for (const iface of unhealthyInterfaces) {
+                    const snap = latestSnapshot(iface);
+                    const status = getInterfaceStatus(iface, alerts);
+                    unhealthyGrid.appendChild(renderInterfaceCard(iface, snap, status));
+                }
+                leftCol.appendChild(unhealthyGrid);
+            }
+
+            // Healthy interfaces render as compact rows
+            if (healthyInterfaces.length > 0) {
+                const healthyWrap = document.createElement('div');
+                healthyWrap.className = 'healthy-interfaces-wrap';
+                if (unhealthyInterfaces.length > 0) {
+                    const subHead = document.createElement('div');
+                    subHead.className = 'sub-column-title';
+                    subHead.textContent = `Healthy interfaces (${healthyInterfaces.length})`;
+                    healthyWrap.appendChild(subHead);
+                }
+                const compactList = document.createElement('div');
+                compactList.className = 'interface-compact-list';
+                for (const iface of healthyInterfaces) {
+                    const snap = latestSnapshot(iface);
+                    compactList.appendChild(renderInterfaceCompactRow(iface, snap));
+                }
+                healthyWrap.appendChild(compactList);
+                leftCol.appendChild(healthyWrap);
             }
         }
-        leftCol.appendChild(cardsWrap);
         board.appendChild(leftCol);
 
         // Right column: Active incidents
@@ -414,7 +688,12 @@ export function render(container, context = {}) {
         rightCol.appendChild(incidentsWrap);
         board.appendChild(rightCol);
 
-        shell.appendChild(board);
+        // --- Bottom section: Backlog trend chart + Recent retries table ---
+        const bottomGrid = document.createElement('div');
+        bottomGrid.className = 'overview-bottom-grid';
+        bottomGrid.appendChild(renderBacklogTrendCard(interfaces));
+        bottomGrid.appendChild(renderRecentRetriesCard(interfaces, alerts));
+        shell.appendChild(bottomGrid);
     }
 
     load();

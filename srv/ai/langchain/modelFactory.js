@@ -97,7 +97,12 @@ async function callGemini(messages, tools = [], options = {}) {
 
     const parentRun = options.parentRun || null;
 
-    for (const model of GEMINI_MODELS) {
+    const configuredModel = (process.env.GEMINI_MODEL || '').trim();
+    const candidateModels = configuredModel
+        ? [configuredModel, ...GEMINI_MODELS.filter(m => m !== configuredModel)]
+        : GEMINI_MODELS;
+
+    for (const model of candidateModels) {
         // Skip candidate if currently in 429/quota cooldown
         if (isModelInCooldown(model)) {
             continue;

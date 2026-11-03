@@ -12,7 +12,9 @@ default-*.json
 
 # Databases (local only - do NOT commit)
 *.sqlite
+*.sqlite-*
 *.db
+*.db-*
 
 # Secrets (NEVER commit)
 .env

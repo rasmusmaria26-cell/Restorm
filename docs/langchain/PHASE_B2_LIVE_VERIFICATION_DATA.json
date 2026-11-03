@@ -1,17 +1,17 @@
 {
   "langsmith": {
     "status": "CONNECTED",
-    "latencyMs": 591,
+    "latencyMs": 608,
     "project": "restorm-ai-development",
     "projectId": "eba1540e-aec9-47a8-a374-f2638d202a0f",
-    "rootRunId": "01a18cce-80c9-7000-8000-015ea1b90bc5",
-    "childRunId": "01a18cce-80cf-7000-8000-02af413bad53",
+    "rootRunId": "01a1a15b-83dc-7000-8000-01bce5c74020",
+    "childRunId": "01a1a15b-83e2-7000-8000-0392608feaae",
     "details": "Successfully authenticated, resolved project, and ingested root + child trace runs."
   },
   "gemini": {
     "status": "LIVE_SUCCESS",
-    "model": "Google Gemini (gemini-3.1-flash-lite)",
-    "latencyMs": 1091,
+    "model": "Google Gemini (gemini-3.5-flash-lite)",
+    "latencyMs": 1100,
     "tokens": {
       "inputTokens": 25,
       "outputTokens": 19,
@@ -95,13 +95,13 @@
   },
   "liveOrchestration": {
     "status": "SUCCESS",
-    "latencyMs": 6069,
-    "provider": "LangChain Orchestrated (Google Gemini (gemini-3.1-flash-lite))",
+    "latencyMs": 2666,
+    "provider": "LangChain Orchestrated (Google Gemini (gemini-3.5-flash-lite))",
     "aiAssisted": true,
     "citedRunbooks": [],
-    "hypothesesCount": 2,
-    "checksCount": 3,
-    "summaryPreview": "The interface 'Order Inbound (S/4HANA)' triggered an EXCESSIVE_RETRIES alert, though current metrics show a healthy state with no active ret",
+    "hypothesesCount": 1,
+    "checksCount": 1,
+    "summaryPreview": "Operational incident detected for rule [EXCESSIVE_RETRIES] with severity [Critical]. Review target endpoint health and retry backpressure.",
     "outputValid": true
   },
   "resilience": {
@@ -110,10 +110,10 @@
     "missingKeys": "PASS"
   },
   "comparison": {
-    "legacyLatencyMs": 2772,
-    "langchainLatencyMs": 7500,
-    "legacyProvider": "Google Gemini (gemini-3.1-flash-lite)",
-    "langchainProvider": "LangChain Orchestrated (Google Gemini (gemini-3.1-flash-lite))",
+    "legacyLatencyMs": 1464,
+    "langchainLatencyMs": 2894,
+    "legacyProvider": "Google Gemini (gemini-3.5-flash-lite)",
+    "langchainProvider": "LangChain Orchestrated (Google Gemini (gemini-3.5-flash-lite))",
     "legacyValid": true,
     "langchainValid": true,
     "bothValidSchemas": true,

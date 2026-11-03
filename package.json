@@ -33,18 +33,22 @@
       "auth": {
         "kind": "mocked",
         "users": {
+          "*": false,
           "alice": {
+            "password": "alice",
             "roles": [
               "SupportViewer"
             ]
           },
           "bob": {
+            "password": "bob",
             "roles": [
               "SupportOperator",
               "SupportViewer"
             ]
           },
           "admin": {
+            "password": "admin",
             "roles": [
               "SimulatorAdmin",
               "SupportOperator",

@@ -295,7 +295,8 @@ function mockFetch(handlers) {
         const u = String(url);
         for (const h of handlers) {
             if (h.match && u.includes(h.match)) {
-                return new MockResponse(h.response, h.status || 200);
+                const response = typeof h.response === 'function' ? h.response(opts) : h.response;
+                return new MockResponse(response, h.status || 200);
             }
         }
         return new MockResponse({ value: [] }, 200);

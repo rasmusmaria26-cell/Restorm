@@ -75,11 +75,13 @@ export function render(container, context = {}) {
     } = context;
 
     const alertId = params && params.id ? params.id : null;
+    const roles = Array.isArray(userRoles) ? userRoles : [];
     const userName = currentUser || 'user';
-    const isAdmin = userRoles.includes('SimulatorAdmin');
-    const isOperator = userRoles.includes('SupportOperator');
+    const isAdmin = roles.includes('SimulatorAdmin');
+    const isOperator = roles.includes('SupportOperator');
     const canAcknowledge = isAdmin || isOperator;
     const canResolve = isAdmin || isOperator;
+    const perms = { canAcknowledge, canResolve, isAdmin, isOperator };
     const friendly = FRIENDLY_RULE_TITLES || {};
     const fmtDur = typeof formatDurationSeconds === 'function' ? formatDurationSeconds : (s) => String(s);
     const fmtTime = typeof formatShortTime === 'function' ? formatShortTime : (s) => (s || '');
