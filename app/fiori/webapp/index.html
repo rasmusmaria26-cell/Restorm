@@ -390,29 +390,52 @@
 
                 sap.ui.getCore().attachInit(function () {
                     sap.ui.require([
-                        "sap/ui/core/Component",
                         "sap/ui/core/ComponentContainer"
-                    ], function (Component, ComponentContainer) {
-                        console.log('[Fiori Elements PoC] Instantiating Component sap.retrysentinel.interfaces...');
-                        Component.create({
-                            name: "sap.retrysentinel.interfaces",
-                            id: "interfacesApp"
-                        }).then(function (oComponent) {
-                            console.log('[Fiori Elements PoC] Component created successfully. Attaching to DOM container...');
+                    ], function (ComponentContainer) {
+                        try {
+                            console.log('[Fiori Elements PoC] Instantiating ComponentContainer for sap.retrysentinel.interfaces...');
                             var oContainer = new ComponentContainer({
-                                component: oComponent,
+                                name: "sap.retrysentinel.interfaces",
                                 height: "100%",
                                 width: "100%",
-                                autoPrefixId: true
+                                async: true,
+                                manifest: true,
+                                settings: {
+                                    id: "interfacesApp"
+                                }
                             });
+
+                            oContainer.attachComponentCreated(function () {
+                                console.log('[Fiori Elements PoC] Component created successfully.');
+                            });
+
+                            oContainer.attachComponentFailed(function (err) {
+                                console.error('[Fiori Elements PoC] Component failed:', err);
+                                renderStandaloneFioriReport();
+                            });
+
                             oContainer.placeAt("fioriRootContainer");
-                            console.log('[Fiori Elements PoC] Component attached to #fioriRootContainer');
-                        }).catch(function (err) {
-                            console.error('[Fiori Elements PoC] Component.create rejected:', err);
+                            console.log('[Fiori Elements PoC] Container placed at #fioriRootContainer');
+
+                            // Resilient fail-safe watchdog:
+                            // If SAPUI5 CDN routing fails or stalls silently, reveal the live fallback table
+                            setTimeout(function () {
+                                var rootEl = document.getElementById('fioriRootContainer');
+                                var fallbackEl = document.getElementById('offlineFallback');
+                                if (fallbackEl && fallbackEl.style.display !== 'block') {
+                                    var hasVisibleUI = rootEl && rootEl.innerText && rootEl.innerText.trim().length > 0;
+                                    if (!hasVisibleUI) {
+                                        console.warn('[Fiori Elements PoC] No UI rendered after timeout; activating fallback List Report.');
+                                        renderStandaloneFioriReport();
+                                    }
+                                }
+                            }, 4500);
+                        } catch (mountErr) {
+                            console.error('[Fiori Elements PoC] Error mounting ComponentContainer:', mountErr);
                             renderStandaloneFioriReport();
-                        });
+                        }
                     }, function (requireErr) {
-                        console.error('[Fiori Elements PoC] Failed to require Component modules:', requireErr);
+                        console.error('[Fiori Elements PoC] Failed to require ComponentContainer:', requireErr);
                         renderStandaloneFioriReport();
                     });
                 });

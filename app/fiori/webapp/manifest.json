@@ -50,7 +50,8 @@
     "rootView": {
       "viewName": "sap.fe.core.rootView.NavContainer",
       "type": "XML",
-      "async": true
+      "async": true,
+      "id": "appRootView"
     },
     "models": {
       "i18n": {
@@ -74,8 +75,6 @@
       "config": {
         "routerClass": "sap.m.routing.Router",
         "viewType": "XML",
-        "controlId": "appContent",
-        "controlAggregation": "pages",
         "async": true
       },
       "routes": [
