@@ -23,11 +23,16 @@ import {
     explainAlert,
     exportIncidentReport,
     triggerSimulation,
+    startGradualSimulation,
+    getSimulationStatus,
+    cancelSimulation,
     configureThresholds,
     resetToCleanSeed,
+    fetchLandscapePredictions,
     login,
     logout,
-    hasCredentials
+    hasCredentials,
+    getAuthHeader
 } from './js/api-client.js?v=5.1';
 
 import {
@@ -36,6 +41,7 @@ import {
     getState,
     setInterfaces,
     setAlerts,
+    setPredictions,
     setTopology,
     setCurrentUser,
     setUserRoles,
@@ -206,6 +212,14 @@ async function refreshData() {
 
         const alertsData = await fetchAlerts();
         setAlerts(alertsData.value || []);
+
+        try {
+            const predRes = await fetchLandscapePredictions();
+            const preds = predRes.value || predRes || [];
+            setPredictions(Array.isArray(preds) ? preds : []);
+        } catch (e) {
+            console.warn('[Predictions] Failed to fetch landscape predictions:', e);
+        }
 
         try {
             const topoRes = await fetchTopology();
@@ -462,6 +476,7 @@ async function handleResolveAlert(alertId) {
 }
 
 async function handleResetDatabase() {
+    stopSimulationPoll();
     const { userRoles, currentUser } = getState();
     const userName = currentUser || 'user';
     const canReset = userRoles.includes('SimulatorAdmin');
@@ -479,6 +494,18 @@ async function handleResetDatabase() {
     }
 }
 
+const SIMULATION_POLL_INTERVAL_MS = 500;
+let activeSimulationPollTimer = null;
+let isPolling = false;
+
+function stopSimulationPoll() {
+    if (activeSimulationPollTimer) {
+        clearInterval(activeSimulationPollTimer);
+        activeSimulationPollTimer = null;
+    }
+    isPolling = false;
+}
+
 async function handleTriggerSimulation(scenario, interfaceId) {
     const { userRoles, currentUser } = getState();
     const userName = currentUser || 'user';
@@ -487,11 +514,63 @@ async function handleTriggerSimulation(scenario, interfaceId) {
         showFeedback(`${userName} can't run simulations. Sign in as an operator or admin to trigger scenarios.`, 'error');
         return;
     }
+
+    const modeSelect = document.getElementById('simulationModeSelect');
+    const mode = modeSelect ? modeSelect.value : 'GRADUAL';
+
+    if (mode === 'INSTANT') {
+        try {
+            showFeedback(`Injecting instant scenario [${scenario}]...`, 'info');
+            await triggerSimulation(scenario, interfaceId);
+            showFeedback(`Instant simulation [${scenario}] completed.`, 'success');
+            await refreshData();
+        } catch (err) {
+            showFeedback(getFriendlyErrorMessage(err, 'simulation'), 'error');
+        }
+        return;
+    }
+
+    // Gradual Multi-Stage Simulation
     try {
-        showFeedback(`Injecting scenario [${scenario}]...`, 'info');
-        await triggerSimulation(scenario, interfaceId);
-        showFeedback(`Simulation [${scenario}] completed.`, 'success');
-        await refreshData();
+        stopSimulationPoll();
+
+        showFeedback(`Starting gradual simulation [${scenario}]...`, 'info');
+        const session = await startGradualSimulation(scenario, interfaceId);
+        const sessionId = session.sessionId;
+
+        showFeedback(`[${session.currentStage}/${session.totalStages}] ${session.stageName || 'Starting'} (${session.progressPercent}%)`, 'info');
+
+        // Poll every 500ms for rapid stage updates and live data refresh
+        activeSimulationPollTimer = setInterval(async () => {
+            if (isPolling) return;
+            isPolling = true;
+            try {
+                const status = await getSimulationStatus(sessionId);
+                if (!status) return;
+
+                if (status.status === 'RUNNING') {
+                    showFeedback(`[${status.currentStage}/${status.totalStages}] ${status.stageName} (${status.progressPercent}%)`, 'info');
+                    await refreshData();
+                } else if (status.status === 'COMPLETED') {
+                    stopSimulationPoll();
+                    showFeedback(`Gradual simulation [${scenario}] completed successfully.`, 'success');
+                    await refreshData();
+                } else if (status.status === 'CANCELLED') {
+                    stopSimulationPoll();
+                    showFeedback(`Simulation cancelled.`, 'info');
+                    await refreshData();
+                } else if (status.status === 'FAILED') {
+                    stopSimulationPoll();
+                    showFeedback(`Simulation failed: ${status.error || 'Unknown error'}`, 'error');
+                    await refreshData();
+                }
+            } catch (pollErr) {
+                // Ignore transient polling errors
+            } finally {
+                isPolling = false;
+            }
+        }, SIMULATION_POLL_INTERVAL_MS);
+
     } catch (err) {
         showFeedback(getFriendlyErrorMessage(err, 'simulation'), 'error');
     }
@@ -871,6 +950,17 @@ function initializeEvents() {
         });
     });
 
+    // Share active session with SAP Fiori Elements view when clicked
+    const fioriLink = document.querySelector('.fiori-link');
+    if (fioriLink) {
+        fioriLink.addEventListener('click', () => {
+            const auth = getAuthHeader();
+            if (auth) {
+                try { sessionStorage.setItem('restorm_fiori_auth', auth); } catch (e) {}
+            }
+        });
+    }
+
     // Explain drawer close
     if (explainDrawerCloseX) explainDrawerCloseX.addEventListener('click', closeExplainDrawer);
     if (explainDrawerCloseBtn) explainDrawerCloseBtn.addEventListener('click', closeExplainDrawer);
@@ -923,6 +1013,12 @@ function initializeEvents() {
             if (explainDrawer && explainDrawer.classList.contains('is-open')) closeExplainDrawer();
             if (thresholdModal && thresholdModal.classList.contains('is-open')) closeThresholdModal();
         }
+    });
+
+    // Page unload cleanup
+    window.addEventListener('beforeunload', () => {
+        stopSimulationPoll();
+        stopLiveStream();
     });
 }
 
@@ -995,8 +1091,10 @@ async function handleLogin(e) {
 }
 
 async function handleLogout() {
+    stopSimulationPoll();
     logout();
     storeLogout();
+    try { sessionStorage.removeItem('restorm_fiori_auth'); } catch (e) {}
 
     // Hide main app, show login
     if (mainApp) {
@@ -1071,3 +1169,10 @@ bootstrap().catch(err => {
         outlet.innerHTML = `<div class="empty-card"><p class="empty-card-title">Application failed to start</p><p class="empty-card-subtitle">${err.message}</p></div>`;
     }
 });
+
+export {
+    SIMULATION_POLL_INTERVAL_MS,
+    stopSimulationPoll,
+    handleTriggerSimulation
+};
+

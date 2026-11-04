@@ -10,6 +10,7 @@
 const state = {
     interfaces: [],
     alerts: [],
+    predictions: [],
     topology: null,
     currentUser: null,            // set after login
     userRoles: [],                // roles from backend, not client-side
@@ -78,6 +79,11 @@ export function setInterfaces(interfaces) {
 export function setAlerts(alerts) {
     state.alerts = alerts || [];
     state.lastUpdated = new Date();
+    notify();
+}
+
+export function setPredictions(predictions) {
+    state.predictions = predictions || [];
     notify();
 }
 

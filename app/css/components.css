@@ -627,6 +627,12 @@ a:focus-visible {
     border-color: #CEEAD6;
 }
 
+.headline-strip.is-predictive-warning {
+    border-left-color: #8B5CF6;
+    background-color: #F5F3FF;
+    border-color: #DDD6FE;
+}
+
 .headline-left {
     display: flex;
     align-items: center;
@@ -647,6 +653,10 @@ a:focus-visible {
 
 .headline-icon.is-high {
     color: #D97706;
+}
+
+.headline-icon.is-predictive {
+    color: #7C3AED;
 }
 
 .headline-icon.is-healthy {
@@ -809,6 +819,12 @@ a:focus-visible {
     color: var(--color-high-badge-text);
 }
 
+.status-badge.predictive-warning {
+    background-color: #EDE9FE;
+    color: #5B21B6;
+    border: 1px dashed #8B5CF6;
+}
+
 .status-dot {
     width: 7px;
     height: 7px;
@@ -825,6 +841,17 @@ a:focus-visible {
 
 .status-badge.high .status-dot {
     background-color: var(--color-high);
+}
+
+.status-badge.predictive-warning .status-dot {
+    background-color: #7C3AED;
+    animation: predictive-pulse 1.4s infinite ease-in-out;
+}
+
+@keyframes predictive-pulse {
+    0% { transform: scale(0.92); box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.7); }
+    70% { transform: scale(1.15); box-shadow: 0 0 0 5px rgba(124, 58, 237, 0); }
+    100% { transform: scale(0.92); box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
 }
 
 /* ---------- Pressure / Sparkline ---------- */
@@ -852,6 +879,48 @@ a:focus-visible {
     height: 42px;
     display: block;
     overflow: visible;
+}
+
+.sparkline-dot-latest {
+    animation: sparkline-pulse 0.38s ease-out;
+    transform-origin: center;
+}
+
+@keyframes sparkline-pulse {
+    0% {
+        transform: scale(0.5);
+        opacity: 0.4;
+    }
+    60% {
+        transform: scale(1.4);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.sparkline-polyline-live {
+    stroke-dasharray: 600;
+    stroke-dashoffset: 600;
+    animation: sparkline-draw 0.38s ease-out forwards;
+}
+
+@keyframes sparkline-draw {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sparkline-dot-latest,
+    .sparkline-polyline-live,
+    .status-badge.predictive-warning .status-dot {
+        animation: none !important;
+        transition: none !important;
+        stroke-dashoffset: 0 !important;
+    }
 }
 
 .pressure-summary {

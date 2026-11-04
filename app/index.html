@@ -152,6 +152,7 @@
             <a href="#" class="sidebar-item" data-route="topology">Topology</a>
             <a href="#" class="sidebar-item" data-route="incidents">Incidents</a>
             <a href="#" class="sidebar-item" data-route="thresholds">Thresholds</a>
+            <a href="/fiori/webapp/index.html" class="sidebar-item fiori-link" style="color: #6366F1; font-weight: 500;" target="_blank" title="Open SAP Fiori Elements List Report">SAP Fiori View ↗</a>
         </nav>
         <div class="sidebar-footer">
             <div class="user-menu-wrapper">
@@ -216,7 +217,12 @@
                         <option value="22222222-2222-2222-2222-222222222222">Invoice Outbound (Payment Gateway)</option>
                         <option value="33333333-3333-3333-3333-333333333333">Inventory Replication (Warehouse WMS)</option>
                     </select>
-                    <span id="targetInterfaceNote" class="hint-text">Select a specific channel or simulate all channels at once</span>
+                    <label for="simulationModeSelect" class="label-sm">Mode:</label>
+                    <select id="simulationModeSelect" class="form-select-sm">
+                        <option value="GRADUAL" selected>Gradual (Multi-stage)</option>
+                        <option value="INSTANT">Instant (One-shot)</option>
+                    </select>
+                    <span id="targetInterfaceNote" class="hint-text">Select channel & mode to simulate progression</span>
                 </div>
                 <div class="scenarios-buttons-row">
                     <button class="btn-scenario sim-btn" type="button" data-scenario="NORMAL">Normal traffic</button>

@@ -28,8 +28,18 @@ export const ENDPOINTS = {
     explainAlert: (id) => `/Alerts(${encodeURIComponent(id)})/MonitoringService.explain`,
     exportIncidentReport: (id) => `/Alerts(${encodeURIComponent(id)})/MonitoringService.exportIncidentReport`,
     triggerSimulation: () => '/triggerSimulation',
+    startGradualSimulation: () => '/startGradualSimulation',
+    getSimulationStatus: (sessionId, interfaceId) => {
+        const params = [];
+        if (sessionId) params.push(`sessionId='${encodeURIComponent(sessionId)}'`);
+        if (interfaceId) params.push(`interfaceId='${encodeURIComponent(interfaceId)}'`);
+        return `/getSimulationStatus(${params.join(',')})`;
+    },
+    cancelSimulation: () => '/cancelSimulation',
     configureThresholds: () => '/configureThresholds',
-    resetToCleanSeed: () => '/resetToCleanSeed'
+    resetToCleanSeed: () => '/resetToCleanSeed',
+    predictions: (interfaceId) => `/getPredictions(interfaceId=${encodeURIComponent(interfaceId)})`,
+    landscapePredictions: () => '/getLandscapePredictions()'
 };
 
 /* ------------------------------------------------------------------ */
@@ -257,6 +267,27 @@ export function triggerSimulation(scenario, interfaceId) {
     });
 }
 
+/** Start a gradual multi-stage simulation scenario on an interface (or all). */
+export function startGradualSimulation(scenario, interfaceId, stepIntervalMs) {
+    return apiRequest(ENDPOINTS.startGradualSimulation(), {
+        method: 'POST',
+        body: JSON.stringify({ scenario, interfaceId, stepIntervalMs })
+    });
+}
+
+/** Get the live progress and status of a gradual simulation session. */
+export function getSimulationStatus(sessionId, interfaceId) {
+    return apiRequest(ENDPOINTS.getSimulationStatus(sessionId, interfaceId));
+}
+
+/** Cancel an active gradual simulation session. */
+export function cancelSimulation(sessionId) {
+    return apiRequest(ENDPOINTS.cancelSimulation(), {
+        method: 'POST',
+        body: JSON.stringify({ sessionId })
+    });
+}
+
 /** Configure per-interface SLA threshold policy. */
 export function configureThresholds(data) {
     return apiRequest(ENDPOINTS.configureThresholds(), {
@@ -271,4 +302,14 @@ export function resetToCleanSeed() {
         method: 'POST',
         body: JSON.stringify({})
     });
+}
+
+/** Fetch predictive forecasts for a specific interface. */
+export function fetchPredictions(interfaceId) {
+    return apiRequest(ENDPOINTS.predictions(interfaceId));
+}
+
+/** Fetch landscape-wide predictive forecasts. */
+export function fetchLandscapePredictions() {
+    return apiRequest(ENDPOINTS.landscapePredictions());
 }

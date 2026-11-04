@@ -1,0 +1,129 @@
+{
+  "_version": "1.32.0",
+  "sap.app": {
+    "id": "sap.retrysentinel.interfaces",
+    "type": "application",
+    "i18n": "i18n/i18n.properties",
+    "title": "SAP Integration Interfaces — Fiori Elements",
+    "description": "Fiori Elements List Report & Monitoring Overview",
+    "applicationVersion": {
+      "version": "1.0.0"
+    },
+    "dataSources": {
+      "mainService": {
+        "uri": "/odata/v4/monitoring/",
+        "type": "OData",
+        "settings": {
+          "annotations": [],
+          "odataVersion": "4.0"
+        }
+      }
+    }
+  },
+  "sap.ui": {
+    "technology": "UI5",
+    "icons": {
+      "icon": "sap-icon://monitor-payments"
+    },
+    "deviceTypes": {
+      "desktop": true,
+      "tablet": true,
+      "phone": true
+    }
+  },
+  "sap.ui5": {
+    "flexEnabled": false,
+    "dependencies": {
+      "minUI5Version": "1.108.0",
+      "libs": {
+        "sap.m": {},
+        "sap.ui.core": {},
+        "sap.ushell": {},
+        "sap.fe.core": {},
+        "sap.fe.templates": {}
+      }
+    },
+    "contentDensities": {
+      "compact": true,
+      "cozy": true
+    },
+    "rootView": {
+      "viewName": "sap.fe.core.rootView.NavContainer",
+      "type": "XML",
+      "async": true
+    },
+    "models": {
+      "i18n": {
+        "type": "sap.ui.model.resource.ResourceModel",
+        "settings": {
+          "bundleName": "sap.retrysentinel.interfaces.i18n.i18n"
+        }
+      },
+      "": {
+        "dataSource": "mainService",
+        "preload": true,
+        "settings": {
+          "synchronizationMode": "None",
+          "operationMode": "Server",
+          "autoExpandSelect": true,
+          "earlyRequests": true
+        }
+      }
+    },
+    "routing": {
+      "config": {
+        "routerClass": "sap.m.routing.Router",
+        "viewType": "XML",
+        "controlId": "appContent",
+        "controlAggregation": "pages",
+        "async": true
+      },
+      "routes": [
+        {
+          "pattern": ":?query:",
+          "name": "InterfacesListReport",
+          "target": "InterfacesListReport"
+        },
+        {
+          "pattern": "Interfaces({key}):?query:",
+          "name": "InterfacesObjectPage",
+          "target": "InterfacesObjectPage"
+        }
+      ],
+      "targets": {
+        "InterfacesListReport": {
+          "type": "Component",
+          "id": "InterfacesListReport",
+          "name": "sap.fe.templates.ListReport",
+          "options": {
+            "settings": {
+              "contextPath": "/Interfaces",
+              "entitySet": "Interfaces",
+              "initialLoad": "Enabled",
+              "variantManagement": "Page",
+              "navigation": {
+                "Interfaces": {
+                  "detail": {
+                    "route": "InterfacesObjectPage"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "InterfacesObjectPage": {
+          "type": "Component",
+          "id": "InterfacesObjectPage",
+          "name": "sap.fe.templates.ObjectPage",
+          "options": {
+            "settings": {
+              "contextPath": "/Interfaces",
+              "entitySet": "Interfaces"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

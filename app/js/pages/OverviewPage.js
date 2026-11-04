@@ -22,6 +22,7 @@ import { EmptyState } from '../components/EmptyState.js';
 import { Card } from '../components/Card.js';
 import { Button } from '../components/Button.js';
 import { Sparkline } from '../components/Sparkline.js';
+import { getState } from '../store.js';
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
@@ -40,12 +41,13 @@ function latestSnapshot(iface) {
  * - Rule D: RECOVERY_STALLED (High)
  * Also checks any open alerts for this interface.
  */
-function getInterfaceStatus(iface, alerts = []) {
+export function getInterfaceStatus(iface, alerts = []) {
     // 1. Check open alerts directly linked to this interface
     if (alerts && alerts.length) {
         const ifaceAlerts = alerts.filter(a => a.interface_ID === iface.ID && a.status === 'Open');
         if (ifaceAlerts.some(a => a.severity === 'Critical')) return 'critical';
         if (ifaceAlerts.some(a => a.severity === 'High')) return 'high';
+        if (ifaceAlerts.some(a => a.severity === 'Warning')) return 'predictive-warning';
     }
 
     // 2. Evaluate latest snapshot against configured thresholds
@@ -58,12 +60,12 @@ function getInterfaceStatus(iface, alerts = []) {
     const retryLimit = Number(iface.maxRetryThreshold) || 100;
     const ageLimit = Number(iface.oldMessageAgeLimitSeconds) || 600;
 
-    // Rule A: Excessive retries -> Critical
+    // Rule A: Excessive retries -> Critical (Confirmed incident)
     if (retry >= retryLimit) return 'critical';
-    // Rules B & C: Queue growth or old message age -> High
+    // Rules B & C: Queue growth or old message age -> High (Confirmed incident)
     if (pending >= limit || age >= ageLimit) return 'high';
-    // Warning threshold (70%) -> High (amber)
-    if (pending >= limit * 0.7 || retry >= retryLimit * 0.7 || age >= ageLimit * 0.7) return 'high';
+    // Warning threshold (70%) -> Predictive Warning (pre-breach warning zone)
+    if (pending >= limit * 0.7 || retry >= retryLimit * 0.7 || age >= ageLimit * 0.7) return 'predictive-warning';
 
     return 'healthy';
 }
@@ -78,12 +80,17 @@ function statusForSnapshot(snap, iface) {
     const ageLimit = Number(iface.oldMessageAgeLimitSeconds) || 600;
     if (retry >= retryLimit) return 'critical';
     if (pending >= limit || age >= ageLimit) return 'high';
-    if (pending >= limit * 0.7 || retry >= retryLimit * 0.7 || age >= ageLimit * 0.7) return 'high';
+    if (pending >= limit * 0.7 || retry >= retryLimit * 0.7 || age >= ageLimit * 0.7) return 'predictive-warning';
     return 'healthy';
 }
 
 function statusLabel(status) {
-    const map = { healthy: 'Healthy', high: 'High', critical: 'Critical' };
+    const map = {
+        healthy: 'Healthy',
+        high: 'High Incident',
+        critical: 'Critical Incident',
+        'predictive-warning': 'Predictive Warning'
+    };
     return map[status] || 'Healthy';
 }
 
@@ -97,9 +104,20 @@ function computeBannerSeverity(kpis, interfaces, alerts) {
     if (kpis.highAlerts > 0) return 'high';
     if (kpis.openAlerts > 0) return 'high';
 
+    // Check store predictions for active warning
+    try {
+        const storeState = typeof getState === 'function' ? getState() : null;
+        const predictions = storeState?.predictions || [];
+        const activePred = predictions.find(p => p.status === 'PREDICTIVE_WARNING');
+        if (activePred) return 'predictive-warning';
+    } catch (e) {
+        // Fallback
+    }
+
     const ifaceStatuses = interfaces.map(i => getInterfaceStatus(i, alerts));
     if (ifaceStatuses.includes('critical')) return 'critical';
     if (ifaceStatuses.includes('high')) return 'high';
+    if (ifaceStatuses.includes('predictive-warning')) return 'predictive-warning';
     return 'healthy';
 }
 
@@ -183,14 +201,71 @@ export function groupIncidents(alerts, interfaces) {
 /* Renderers                                                          */
 /* ------------------------------------------------------------------ */
 
+const priorKpiValues = new Map();
+
+export function animateCounter(element, startVal, endVal, duration = 380) {
+    if (!element) return;
+    const start = Number(startVal) || 0;
+    const end = Number(endVal) || 0;
+    if (element.dataset) {
+        element.dataset.val = String(end);
+    }
+
+    const prefersReducedMotion = typeof window !== 'undefined'
+        && typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)')?.matches;
+
+    if (prefersReducedMotion || duration <= 0 || start === end) {
+        element.textContent = formatNumber(end);
+        return;
+    }
+
+    if (typeof requestAnimationFrame !== 'function') {
+        element.textContent = formatNumber(end);
+        return;
+    }
+
+    const startTime = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+        ? performance.now()
+        : Date.now();
+
+    function step(currentTime) {
+        const now = currentTime || ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now());
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        // easeOutQuad
+        const ease = 1 - (1 - progress) * (1 - progress);
+        const currentVal = Math.round(start + (end - start) * ease);
+        element.textContent = formatNumber(currentVal);
+
+        if (progress < 1) {
+            requestAnimationFrame(step);
+        } else {
+            element.textContent = formatNumber(end);
+        }
+    }
+
+    requestAnimationFrame(step);
+}
+
 function renderKpiCard(label, value, sub, status = 'healthy') {
     const card = document.createElement('div');
     card.className = `kpi-card is-${status}`;
+    const numValue = Number(value) || 0;
+    const startVal = priorKpiValues.has(label) ? priorKpiValues.get(label) : numValue;
+    priorKpiValues.set(label, numValue);
+
     card.innerHTML = `
         <div class="kpi-label">${escapeHtml(label)}</div>
-        <div class="kpi-value">${escapeHtml(value)}</div>
+        <div class="kpi-value" data-val="${escapeHtml(String(numValue))}">${escapeHtml(formatNumber(startVal))}</div>
         <div class="kpi-sub">${escapeHtml(sub || ' ')}</div>
     `;
+
+    const valueEl = (typeof card.querySelector === 'function') ? card.querySelector('.kpi-value') : null;
+    if (valueEl) {
+        animateCounter(valueEl, startVal, numValue, 380);
+    }
+
     return card;
 }
 
@@ -207,15 +282,29 @@ function renderHeadline(kpis, severity) {
         iconSvg = `<svg class="headline-icon is-high" viewBox="0 0 20 20" fill="currentColor" width="20" height="20" aria-hidden="true">
             <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
         </svg>`;
+    } else if (severity === 'predictive-warning') {
+        iconSvg = `<svg class="headline-icon is-predictive" viewBox="0 0 20 20" fill="currentColor" width="20" height="20" aria-hidden="true">
+            <path fill-rule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 4.75a.75.75 0 00-1.5 0v4.5a.75.75 0 001.5 0v-4.5zm-.75 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+        </svg>`;
     } else {
         iconSvg = `<svg class="headline-icon is-healthy" viewBox="0 0 20 20" fill="currentColor" width="20" height="20" aria-hidden="true">
             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/>
         </svg>`;
     }
 
+    let activeWarning = null;
+    try {
+        const storeState = typeof getState === 'function' ? getState() : null;
+        const predictions = storeState?.predictions || [];
+        activeWarning = predictions.find(p => p.status === 'PREDICTIVE_WARNING');
+    } catch (e) {}
+
     const messages = {
-        critical: `Critical incidents detected — ${kpis.criticalAlerts} critical, ${kpis.highAlerts} high open alert${kpis.openAlerts > 1 ? 's' : ''}`,
-        high: `High-severity backlog growth across interfaces — ${kpis.highAlerts} high open alert${kpis.highAlerts > 1 ? 's' : ''}`,
+        critical: `Critical incident detected — ${kpis.criticalAlerts} critical, ${kpis.highAlerts} high open alert${kpis.openAlerts > 1 ? 's' : ''}`,
+        high: `Confirmed incident: high-severity backlog growth across interfaces — ${kpis.highAlerts} high open alert${kpis.highAlerts > 1 ? 's' : ''}`,
+        'predictive-warning': activeWarning
+            ? `Predictive Warning — Impending ${activeWarning.metricLabel || 'threshold'} breach on ${activeWarning.interfaceName} in ~${activeWarning.estimatedSecondsToBreach}s (+${activeWarning.growthRatePerSecond}/s, Confidence: ${Math.round(activeWarning.confidence * 100)}%)`
+            : `Predictive warning — Interface approaching threshold, storm imminent`,
         healthy: `All ${kpis.totalInterfaces} interfaces operating normally within thresholds`
     };
 
@@ -382,6 +471,7 @@ function renderBacklogTrendCard(interfaces) {
             }
             allPoints.push({ index: idx, pending: totalPending, time: timeLabel });
         }
+        allPoints = allPoints.slice(-20);
     } else {
         allPoints = [{ index: 0, pending: 0, time: 'now' }];
     }
@@ -611,8 +701,8 @@ export function render(container, context = {}) {
         ifaceHeader.innerHTML = '<h3 class="column-title">Interface Status</h3><span class="column-count">' + interfaces.length + '</span>';
         leftCol.appendChild(ifaceHeader);
 
-        // Sort interfaces by severity: critical -> high -> healthy, then name
-        const severityRankOrder = { critical: 3, high: 2, healthy: 1 };
+        // Sort interfaces by severity: critical -> high -> predictive-warning -> healthy, then name
+        const severityRankOrder = { critical: 4, high: 3, 'predictive-warning': 2, healthy: 1 };
         const sortedInterfaces = [...interfaces].sort((a, b) => {
             const sevA = getInterfaceStatus(a, alerts);
             const sevB = getInterfaceStatus(b, alerts);

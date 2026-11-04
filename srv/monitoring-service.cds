@@ -45,9 +45,75 @@ service MonitoringService @(requires: 'authenticated-user') {
         oldestPendingAgeSeconds : Integer
     ) returns String;
 
-    // Simulation trigger endpoint
+    // Simulation trigger endpoint (one-shot, immediate)
     @(requires: ['SimulatorAdmin', 'SupportOperator'])
     action triggerSimulation(scenario: String, interfaceId: UUID) returns String;
+
+    // Gradual simulation session structure
+    type SimulationSessionInfo {
+        sessionId       : String;
+        scenario        : String;
+        interfaceId     : String;
+        status          : String; // RUNNING, COMPLETED, FAILED, CANCELLED
+        currentStage    : Integer;
+        totalStages     : Integer;
+        stageName       : String;
+        progressPercent : Integer;
+        startedAt       : String;
+        completedAt     : String;
+        error           : String;
+        message         : String;
+    };
+
+    // Action: Start gradual multi-stage simulation in background
+    @(requires: ['SimulatorAdmin', 'SupportOperator'])
+    action startGradualSimulation(
+        scenario       : String,
+        interfaceId    : String,
+        stepIntervalMs : Integer
+    ) returns SimulationSessionInfo;
+
+    // Function: Poll simulation session status
+    @(requires: 'authenticated-user')
+    function getSimulationStatus(
+        sessionId   : String,
+        interfaceId : String
+    ) returns SimulationSessionInfo;
+
+    // Action: Cancel an active simulation
+    @(requires: ['SimulatorAdmin', 'SupportOperator'])
+    action cancelSimulation(
+        sessionId : String
+    ) returns SimulationSessionInfo;
+
+    // Phase 3: Proactive Predictive Forecast Structure
+    type PredictionForecast {
+        interfaceId              : UUID;
+        interfaceName            : String;
+        metric                   : String;
+        metricLabel              : String;
+        ruleCode                 : String;
+        currentValue             : Integer;
+        threshold                : Integer;
+        growthRatePerSecond      : Decimal(9, 2);
+        confidence               : Decimal(5, 2);
+        rSquared                 : Decimal(5, 4);
+        estimatedSecondsToBreach : Decimal(9, 1);
+        projectedBreachAt        : String;
+        status                   : String;
+        riskLevel                : String;
+        observationsCount        : Integer;
+        hasPrediction            : Boolean;
+        summary                  : String;
+    };
+
+    // Phase 3: Query proactive predictions for an interface
+    @(requires: 'authenticated-user')
+    function getPredictions(interfaceId : UUID) returns array of PredictionForecast;
+
+    // Phase 3: Query proactive predictions landscape-wide
+    @(requires: 'authenticated-user')
+    function getLandscapePredictions() returns array of PredictionForecast;
 
     // Administrative threshold configuration (Admin only)
     @(requires: 'SimulatorAdmin')

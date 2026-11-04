@@ -23,7 +23,7 @@ const ExplanationOutputSchema = z.object({
         .max(6, 'Maximum 6 recommended checks allowed')
         .describe('Prioritized, safe, read-only diagnostic steps'),
 
-    citedRunbookIds: z.array(z.string().regex(/^rb-[a-zA-Z0-9_-]+$/, 'Runbook ID must match format rb-xxx'))
+    citedRunbookIds: z.array(z.string().regex(/^rb-[a-zA-Z0-9_.-]+$/i, 'Runbook ID must match format rb-xxx'))
         .max(4, 'Maximum 4 runbook citations allowed')
         .describe('Exact runbook IDs retrieved from the approved catalog'),
 

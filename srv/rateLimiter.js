@@ -121,6 +121,8 @@ const LIMITERS = {
     resetToCleanSeed: createRateLimiter(10 * 60 * 1000, 20),
     configureThresholds: createRateLimiter(10 * 60 * 1000, 60),
     triggerSimulation: createRateLimiter(10 * 60 * 1000, 60),
+    startGradualSimulation: createRateLimiter(10 * 60 * 1000, 60),
+    cancelSimulation: createRateLimiter(10 * 60 * 1000, 60),
     ingestTelemetry: createRateLimiter(1 * 60 * 1000, 120),
     explain: createRateLimiter(10 * 60 * 1000, 60),
     acknowledge: createRateLimiter(10 * 60 * 1000, 60),

@@ -9,6 +9,12 @@ try {
 
 const cds = require('@sap/cds');
 const { generateSnapshotData, ALLOWED_SCENARIOS } = require('./core/simulator');
+const {
+    startGradualSimulation,
+    cancelSimulation,
+    getSimulationStatus,
+    resetSimulationState
+} = require('./core/gradualSimulator');
 const { generateGroundedExplanation } = require('./ai/explanationService');
 const { generateMarkdownReport } = require('./core/reportGenerator');
 const {
@@ -16,6 +22,10 @@ const {
     validateTimestamp,
     processSnapshotAndEvaluate
 } = require('./core/ingestionPipeline');
+const {
+    evaluateInterfacePredictions,
+    evaluateLandscapePredictions
+} = require('./core/predictiveEngine');
 const { buildTopologyGraph } = require('./core/topologyService');
 const { enforceRateLimit, enforceBodySize, LIMITERS } = require('./rateLimiter');
 
@@ -361,6 +371,90 @@ module.exports = class MonitoringService extends cds.ApplicationService {
             return results[0].message;
         });
 
+        // Action: Start gradual multi-stage simulation in background
+        this.on('startGradualSimulation', async (req) => {
+            // Protect against oversized request bodies
+            const bodySizeResult = enforceBodySize(req);
+            if (bodySizeResult) return bodySizeResult;
+
+            // Rate limit: simulation trigger
+            const rateLimitResult = enforceRateLimit(req, 'startGradualSimulation', LIMITERS.startGradualSimulation);
+            if (rateLimitResult) return rateLimitResult;
+
+            const { scenario, interfaceId, stepIntervalMs } = req.data || {};
+
+            // 1. Validate scenario input against frozen allowlist
+            if (scenario && !ALLOWED_SCENARIOS.includes(scenario)) {
+                return req.reject(400, `Invalid scenario '${scenario}'. Allowed: ${ALLOWED_SCENARIOS.join(', ')}`);
+            }
+
+            // 2. Determine target interface(s)
+            let targetInterfaces;
+            if (interfaceId === 'ALL' || interfaceId === undefined || interfaceId === null) {
+                targetInterfaces = await SELECT.from(Interfaces).where({ active: true });
+                if (!targetInterfaces || targetInterfaces.length === 0) {
+                    return req.reject(400, 'No active interfaces found for landscape-wide simulation');
+                }
+            } else {
+                if (typeof interfaceId !== 'string' || interfaceId.length > 36) {
+                    return req.reject(400, 'Invalid interfaceId format');
+                }
+                const single = await SELECT.one.from(Interfaces).where({ ID: interfaceId });
+                if (!single) return req.reject(404, `Interface ${interfaceId} not found`);
+                targetInterfaces = [single];
+            }
+
+            // 3. Initiate gradual simulation
+            const user = req.user?.id || 'Operator';
+            const result = startGradualSimulation({
+                scenario: scenario || 'NORMAL',
+                interfaceId: interfaceId || 'ALL',
+                stepIntervalMs,
+                user,
+                targetInterfaces,
+                entities: { QueueSnapshots, Alerts, Interfaces }
+            });
+
+            if (!result.ok) {
+                if (result.conflict) {
+                    return req.reject(409, result.error);
+                }
+                return req.reject(400, result.error);
+            }
+
+            return result.session;
+        });
+
+        // Function: Get status of simulation session
+        this.on('getSimulationStatus', async (req) => {
+            const { sessionId, interfaceId } = req.data || {};
+            const status = getSimulationStatus(sessionId, interfaceId);
+            if (!status) {
+                return req.reject(404, 'Simulation session not found');
+            }
+            return status;
+        });
+
+        // Action: Cancel an active simulation session
+        this.on('cancelSimulation', async (req) => {
+            const bodySizeResult = enforceBodySize(req);
+            if (bodySizeResult) return bodySizeResult;
+
+            const rateLimitResult = enforceRateLimit(req, 'cancelSimulation', LIMITERS.cancelSimulation);
+            if (rateLimitResult) return rateLimitResult;
+
+            const { sessionId } = req.data || {};
+            if (!sessionId || typeof sessionId !== 'string') {
+                return req.reject(400, 'Invalid sessionId format');
+            }
+
+            const cancelled = cancelSimulation(sessionId);
+            if (!cancelled) {
+                return req.reject(404, `Simulation session '${sessionId}' not found`);
+            }
+            return cancelled;
+        });
+
         // Action: Configure per-interface threshold policies (Admin only)
         this.on('configureThresholds', async (req) => {
             // Protect against oversized request bodies
@@ -411,6 +505,9 @@ module.exports = class MonitoringService extends cds.ApplicationService {
             const rateLimitResult = enforceRateLimit(req, 'resetToCleanSeed', LIMITERS.resetToCleanSeed);
             if (rateLimitResult) return rateLimitResult;
 
+            // Reset active simulation sessions
+            resetSimulationState();
+
             // Delete all generated alerts and runtime snapshots
             await DELETE.from(Alerts);
             await DELETE.from(QueueSnapshots);
@@ -440,6 +537,24 @@ module.exports = class MonitoringService extends cds.ApplicationService {
             }
 
             return `Database reset to clean baseline. ${allInterfaces.length} queues initialized with 0 active alerts.`;
+        });
+
+        // Phase 3: Proactive Predictive Analysis for a specific interface
+        this.on('getPredictions', async (req) => {
+            const { interfaceId } = req.data || {};
+            if (!interfaceId || typeof interfaceId !== 'string' || interfaceId.length > 36) {
+                return req.reject(400, "Invalid 'interfaceId' format");
+            }
+            const iface = await SELECT.one.from(Interfaces).where({ ID: interfaceId });
+            if (!iface) {
+                return req.reject(404, `Interface '${interfaceId}' not found`);
+            }
+            return await evaluateInterfacePredictions({ Interfaces, QueueSnapshots, Alerts }, iface);
+        });
+
+        // Phase 3: Proactive Predictive Analysis across the entire landscape
+        this.on('getLandscapePredictions', async (req) => {
+            return await evaluateLandscapePredictions({ Interfaces, QueueSnapshots, Alerts });
         });
 
         // GET /odata/v4/monitoring/getCurrentUser — Returns the authenticated

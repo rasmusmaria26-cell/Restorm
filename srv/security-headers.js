@@ -26,6 +26,16 @@ const CSP_POLICY =
     "connect-src 'self'; " +
     "frame-ancestors 'self';";
 
+// Content Security Policy for SAP Fiori Elements webapp (allows SAPUI5 CDN resources and dynamic styling)
+const FIORI_CSP_POLICY =
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://ui5.sap.com; " +
+    "style-src 'self' 'unsafe-inline' https://ui5.sap.com https://fonts.googleapis.com; " +
+    "font-src 'self' https://ui5.sap.com https://fonts.gstatic.com data:; " +
+    "img-src 'self' data: https://ui5.sap.com; " +
+    "connect-src 'self' https://ui5.sap.com; " +
+    "frame-ancestors 'self';";
+
 module.exports = function securityHeaders(req, res, next) {
     // MIME sniffing protection
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -33,8 +43,10 @@ module.exports = function securityHeaders(req, res, next) {
     // Referrer policy
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 
-    // Content Security Policy (HTTP response header — frame-ancestors only honored here)
-    res.setHeader('Content-Security-Policy', CSP_POLICY);
+    // Content Security Policy: serve Fiori-tailored CSP for Fiori webapp and SAP ICF mocks
+    const reqPath = (req && typeof req.path === 'string') ? req.path : '';
+    const isFiori = reqPath.startsWith('/fiori') || reqPath.startsWith('/sap/bc/');
+    res.setHeader('Content-Security-Policy', isFiori ? FIORI_CSP_POLICY : CSP_POLICY);
 
     // HSTS only for verified HTTPS connections (req.secure).
     // x-forwarded-proto is intentionally NOT trusted — it can be spoofed by clients.

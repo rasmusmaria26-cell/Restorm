@@ -13,6 +13,8 @@
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+export const CHART_WINDOW_SIZE = 20;
+
 export function Sparkline({
     snapshots = [],
     limitValue = 200,
@@ -29,8 +31,11 @@ export function Sparkline({
     svg.setAttribute('class', 'sparkline-svg');
     svg.setAttribute('aria-hidden', 'true');
 
+    // Slice to latest 15-20 snapshots (20-point rolling window)
+    const recentSnapshots = (snapshots || []).slice(-CHART_WINDOW_SIZE);
+
     // If no snapshots, render flat baseline
-    if (!snapshots || snapshots.length === 0) {
+    if (!recentSnapshots || recentSnapshots.length === 0) {
         const line = document.createElementNS(SVG_NS, 'line');
         line.setAttribute('x1', String(padX));
         line.setAttribute('y1', String(height - padY));
@@ -43,7 +48,7 @@ export function Sparkline({
     }
 
     // Extract pending counts
-    const pointsData = snapshots.map((s) => Number(s.pendingCount) || 0);
+    const pointsData = recentSnapshots.map((s) => Number(s.pendingCount) || 0);
     const latestValue = pointsData[pointsData.length - 1] || 0;
     const isOverLimit = latestValue >= limitValue;
 
@@ -84,6 +89,7 @@ export function Sparkline({
     }
 
     const polyline = document.createElementNS(SVG_NS, 'polyline');
+    polyline.setAttribute('class', 'sparkline-polyline-live');
     polyline.setAttribute('points', coords.join(' '));
     polyline.setAttribute('fill', 'none');
     polyline.setAttribute('stroke', isOverLimit ? 'var(--color-critical)' : 'var(--color-harbor)');
@@ -92,9 +98,10 @@ export function Sparkline({
     polyline.setAttribute('stroke-linejoin', 'round');
     svg.appendChild(polyline);
 
-    // 3. Highlight dot on the latest snapshot point
+    // 3. Highlight dot on the latest snapshot point with pulse animation
     const lastCoord = coords[coords.length - 1].split(',');
     const dot = document.createElementNS(SVG_NS, 'circle');
+    dot.setAttribute('class', 'sparkline-dot-latest');
     dot.setAttribute('cx', lastCoord[0]);
     dot.setAttribute('cy', lastCoord[1]);
     dot.setAttribute('r', '3.5');

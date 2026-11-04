@@ -20,14 +20,34 @@ const { describe, it, before } = require('node:test');
 const assert = require('node:assert/strict');
 
 function installDOMShim() {
-    if (global.document) return;
     const el = (tag) => ({
         tag,
         children: [],
-        setAttribute() {},
+        attributes: {},
+        setAttribute(k, v) { this.attributes[k] = v; if (k === 'class') this.className = v; },
+        getAttribute(k) { return this.attributes[k]; },
         appendChild(c) { this.children.push(c); return c; },
+        append(...nodes) { for (const n of nodes) this.children.push(n); },
         replaceChildren() { this.children = []; },
         addEventListener() {},
+        querySelectorAll(selector) {
+            const res = [];
+            const walk = (node) => {
+                if (!node) return;
+                if (selector.startsWith('.') && node.className && node.className.includes(selector.slice(1))) {
+                    res.push(node);
+                } else if (node.tag === selector) {
+                    res.push(node);
+                }
+                for (const ch of (node.children || [])) walk(ch);
+            };
+            walk(this);
+            return res;
+        },
+        querySelector(selector) {
+            const list = this.querySelectorAll(selector);
+            return list.length ? list[0] : null;
+        },
         className: '',
         style: {},
         innerHTML: '',
@@ -35,29 +55,55 @@ function installDOMShim() {
         value: '',
         title: ''
     });
-    const doc = {
-        createElement: (tag) => el(tag),
-        createElementNS: () => el('svg'),
-        getElementById: () => null,
-        head: { appendChild() {}, insertBefore() {} },
-        body: { appendChild() {} },
-        documentElement: { appendChild() {} },
-        addEventListener() {},
-        location: { hash: '' }
-    };
-    global.document = doc;
-    global.window = { location: { hash: '' }, addEventListener() {}, dispatchEvent() {} };
-    global.Element = function Element() {};
-    global.Node = { ELEMENT_NODE: 1 };
-    global.HTMLElement = function HTMLElement() {};
+
+    if (!global.document) {
+        const doc = {
+            createElement: (tag) => el(tag),
+            createElementNS: (ns, tag) => el(tag),
+            getElementById: () => null,
+            querySelectorAll: () => [],
+            querySelector: () => null,
+            head: { appendChild() {}, insertBefore() {} },
+            body: { appendChild() {} },
+            documentElement: { appendChild() {} },
+            addEventListener() {},
+            location: { hash: '' }
+        };
+        global.document = doc;
+    } else {
+        if (!global.document.createElementNS) {
+            global.document.createElementNS = (ns, tag) => el(tag);
+        }
+    }
+
+    if (!global.window) {
+        global.window = {
+            location: { hash: '' },
+            addEventListener() {},
+            dispatchEvent() {},
+            matchMedia: () => ({ matches: false })
+        };
+    } else if (!global.window.matchMedia) {
+        global.window.matchMedia = () => ({ matches: false });
+    }
+
+    if (!global.Element) global.Element = function Element() {};
+    if (!global.Node) global.Node = { ELEMENT_NODE: 1 };
+    if (!global.HTMLElement) global.HTMLElement = function HTMLElement() {};
 }
 
 installDOMShim();
 
 let OverviewPage;
+let SparklineMod;
+let InterfaceDetailPage;
+let appMod;
 
 before(async () => {
     OverviewPage = await import('../../app/js/pages/OverviewPage.js');
+    SparklineMod = await import('../../app/js/components/Sparkline.js');
+    InterfaceDetailPage = await import('../../app/js/pages/InterfaceDetailPage.js');
+    appMod = await import('../../app/app.js');
 });
 
 // ------------------------------------------------------------------
@@ -209,3 +255,221 @@ describe('OverviewPage metric computations', () => {
         });
     });
 });
+
+describe('20-Point Rolling Window Chart Contracts', () => {
+    it('F1: Sparkline trims snapshots to at most 20 points (CHART_WINDOW_SIZE = 20)', () => {
+        assert.equal(SparklineMod.CHART_WINDOW_SIZE, 20, 'CHART_WINDOW_SIZE must be exactly 20');
+
+        // 1. Given 45 snapshots, Sparkline trims to latest 20 points
+        const manySnapshots = Array.from({ length: 45 }, (_, i) => ({
+            capturedAt: new Date(Date.now() - (45 - i) * 1000).toISOString(),
+            pendingCount: 10 + i * 2,
+            retryAttempts: 1 + i,
+            failedCount: 0,
+            successCount: 100,
+            oldestPendingAgeSeconds: 10
+        }));
+
+        const svg = SparklineMod.Sparkline({ snapshots: manySnapshots, limitValue: 200, width: 220, height: 40 });
+        assert.ok(svg, 'Sparkline must return SVG element');
+
+        const polyline = svg.children.find(c => c.getAttribute('class') === 'sparkline-polyline-live');
+        assert.ok(polyline, 'Sparkline must contain live polyline');
+        const pointsStr = polyline.getAttribute('points').trim();
+        const coords = pointsStr.split(/\s+/);
+        assert.equal(coords.length, 20, 'Polyline points count must be exactly sliced to 20 points');
+
+        // Latest highlight dot exists and reflects the latest (45th) snapshot
+        const dot = svg.children.find(c => c.getAttribute('class') === 'sparkline-dot-latest');
+        assert.ok(dot, 'Highlight dot must exist for latest snapshot point');
+        const lastCoord = coords[coords.length - 1].split(',');
+        assert.equal(dot.getAttribute('cx'), lastCoord[0]);
+        assert.equal(dot.getAttribute('cy'), lastCoord[1]);
+
+        // 2. Given <= 20 snapshots (e.g. 5 snapshots), Sparkline preserves all 5 points
+        const fewSnapshots = manySnapshots.slice(0, 5);
+        const svgFew = SparklineMod.Sparkline({ snapshots: fewSnapshots, limitValue: 200 });
+        const polylineFew = svgFew.children.find(c => c.getAttribute('class') === 'sparkline-polyline-live');
+        const coordsFew = polylineFew.getAttribute('points').trim().split(/\s+/);
+        assert.equal(coordsFew.length, 5, 'Polyline preserves all points when snapshot count is <= 20');
+
+        // 3. Given 0 snapshots, Sparkline renders flat baseline line
+        const svgEmpty = SparklineMod.Sparkline({ snapshots: [], limitValue: 200 });
+        const baseLine = svgEmpty.children.find(c => c.tag === 'line');
+        assert.ok(baseLine, 'Empty snapshots must render flat baseline line');
+    });
+
+    it('F2: OverviewPage backlog trend card trims snapshot points to at most 20 points', async () => {
+        const container = document.createElement('div');
+        const manySnapshots = Array.from({ length: 45 }, (_, i) => ({
+            snapshotTime: `T-${45 - i}`,
+            pendingCount: 10 + i * 2,
+            retryAttempts: 1 + i,
+            failedCount: 0,
+            successCount: 100,
+            oldestPendingAgeSeconds: 10
+        }));
+
+        const ifaces = [
+            makeInterface({ ID: 'iface-1', name: 'Order Processing', snapshots: manySnapshots }),
+            makeInterface({ ID: 'iface-2', name: 'Billing Integration', snapshots: manySnapshots })
+        ];
+
+        OverviewPage.render(container, {
+            api: {
+                fetchInterfaces: async () => ({ value: ifaces }),
+                fetchAlerts: async () => ({ value: [] })
+            }
+        });
+
+        // Allow async load to complete
+        await new Promise(r => setTimeout(r, 25));
+
+        const trendCards = container.querySelectorAll('.trend-chart-card');
+        assert.equal(trendCards.length, 1, 'OverviewPage must render trend-chart-card');
+        const circles = trendCards[0].innerHTML.match(/<circle/g);
+        assert.ok(circles, 'Trend chart must contain point circles');
+        assert.equal(circles.length, 20, 'Trend chart circles must be strictly bounded to latest 20 points');
+    });
+
+    it('F3: InterfaceDetailPage history chart trims snapshot points to at most 20 points', async () => {
+        const container = document.createElement('div');
+        const manySnapshots = Array.from({ length: 45 }, (_, i) => ({
+            snapshotTime: `T-${45 - i}`,
+            pendingCount: 10 + i * 2,
+            retryAttempts: 1 + i,
+            failedCount: 0,
+            successCount: 100,
+            oldestPendingAgeSeconds: 10
+        }));
+
+        const ifaces = [
+            makeInterface({ ID: 'iface-1', name: 'Order Processing', snapshots: manySnapshots })
+        ];
+
+        InterfaceDetailPage.render(container, {
+            params: { id: 'iface-1' },
+            userRoles: ['SupportViewer'],
+            currentUser: 'alice',
+            api: {
+                fetchInterfaces: async () => ({ value: ifaces }),
+                fetchAlerts: async () => ({ value: [] })
+            }
+        });
+
+        await new Promise(r => setTimeout(r, 25));
+
+        const svgList = container.querySelectorAll('.history-svg');
+        assert.ok(svgList.length >= 1, 'InterfaceDetailPage must render .history-svg');
+        const polylines = svgList[0].children.filter(c => c.tag === 'polyline');
+        assert.ok(polylines.length >= 1, 'History chart must contain polylines');
+        const points = polylines[0].getAttribute('points').trim().split(/\s+/);
+        assert.equal(points.length, 20, 'History chart polylines must be strictly bounded to latest 20 points');
+    });
+});
+
+describe('Predictive Warning Status Contracts (getInterfaceStatus)', () => {
+    const baseInterface = {
+        ID: 'iface-1',
+        name: 'Order-to-Cash',
+        maxRetryThreshold: 100,
+        queueGrowthLimit: 200,
+        oldMessageAgeLimitSeconds: 600
+    };
+
+    it('F4: getInterfaceStatus returns "predictive-warning" when metrics enter 70% threshold warning zone', () => {
+        // Warning zone via retryAttempts (70% of 100 = 70)
+        const ifaceRetryWarning = {
+            ...baseInterface,
+            snapshots: [makeSnapshot({ retryAttempts: 70, pendingCount: 20, oldestPendingAgeSeconds: 30 })]
+        };
+        assert.equal(OverviewPage.getInterfaceStatus(ifaceRetryWarning), 'predictive-warning');
+
+        // Warning zone via pendingCount (70% of 200 = 140)
+        const ifaceQueueWarning = {
+            ...baseInterface,
+            snapshots: [makeSnapshot({ retryAttempts: 10, pendingCount: 140, oldestPendingAgeSeconds: 30 })]
+        };
+        assert.equal(OverviewPage.getInterfaceStatus(ifaceQueueWarning), 'predictive-warning');
+
+        // Warning zone via oldestPendingAgeSeconds (70% of 600 = 420)
+        const ifaceAgeWarning = {
+            ...baseInterface,
+            snapshots: [makeSnapshot({ retryAttempts: 10, pendingCount: 20, oldestPendingAgeSeconds: 420 })]
+        };
+        assert.equal(OverviewPage.getInterfaceStatus(ifaceAgeWarning), 'predictive-warning');
+
+        // Warning zone via linked open alert with Warning severity
+        const ifaceCleanMetrics = {
+            ...baseInterface,
+            snapshots: [makeSnapshot({ retryAttempts: 5, pendingCount: 10, oldestPendingAgeSeconds: 15 })]
+        };
+        const warningAlert = makeAlert({ interface_ID: 'iface-1', severity: 'Warning', status: 'Open' });
+        assert.equal(OverviewPage.getInterfaceStatus(ifaceCleanMetrics, [warningAlert]), 'predictive-warning');
+    });
+
+    it('F5: getInterfaceStatus clearly distinguishes predictive-warning from confirmed incidents and healthy state', () => {
+        // Confirmed Critical incident: retries exceed 100
+        const ifaceCriticalRetries = {
+            ...baseInterface,
+            snapshots: [makeSnapshot({ retryAttempts: 100, pendingCount: 50, oldestPendingAgeSeconds: 100 })]
+        };
+        assert.equal(OverviewPage.getInterfaceStatus(ifaceCriticalRetries), 'critical');
+
+        // Confirmed Critical incident via open Critical alert
+        const criticalAlert = makeAlert({ interface_ID: 'iface-1', severity: 'Critical', status: 'Open' });
+        assert.equal(OverviewPage.getInterfaceStatus(baseInterface, [criticalAlert]), 'critical');
+
+        // Confirmed High incident: pending queue exceeds 200
+        const ifaceHighPending = {
+            ...baseInterface,
+            snapshots: [makeSnapshot({ retryAttempts: 50, pendingCount: 200, oldestPendingAgeSeconds: 100 })]
+        };
+        assert.equal(OverviewPage.getInterfaceStatus(ifaceHighPending), 'high');
+
+        // Confirmed High incident: oldest message age exceeds 600
+        const ifaceHighAge = {
+            ...baseInterface,
+            snapshots: [makeSnapshot({ retryAttempts: 50, pendingCount: 50, oldestPendingAgeSeconds: 600 })]
+        };
+        assert.equal(OverviewPage.getInterfaceStatus(ifaceHighAge), 'high');
+
+        // Confirmed High incident via open High alert
+        const highAlert = makeAlert({ interface_ID: 'iface-1', severity: 'High', status: 'Open' });
+        assert.equal(OverviewPage.getInterfaceStatus(baseInterface, [highAlert]), 'high');
+
+        // Healthy state: metrics strictly below 70% warning zone
+        const ifaceHealthy = {
+            ...baseInterface,
+            snapshots: [makeSnapshot({ retryAttempts: 30, pendingCount: 80, oldestPendingAgeSeconds: 150 })]
+        };
+        assert.equal(OverviewPage.getInterfaceStatus(ifaceHealthy), 'healthy');
+
+        // Interface without snapshots defaults to healthy
+        assert.equal(OverviewPage.getInterfaceStatus({ ...baseInterface, snapshots: [] }), 'healthy');
+    });
+});
+
+describe('Frontend Simulation Polling & Animation Configuration Contracts', () => {
+    it('F6: app.js exports SIMULATION_POLL_INTERVAL_MS = 500 ms', () => {
+        assert.equal(
+            appMod.SIMULATION_POLL_INTERVAL_MS,
+            500,
+            'Frontend simulation polling cadence must be exactly 500 ms for responsive updates'
+        );
+    });
+
+    it('F7: KPI counter animation duration is configured in OverviewPage (350-400ms range)', () => {
+        assert.equal(typeof OverviewPage.animateCounter, 'function');
+        const src = OverviewPage.animateCounter.toString();
+        const match = src.match(/duration\s*=\s*(\d+)/);
+        assert.ok(match, 'animateCounter must define default duration parameter');
+        const duration = Number(match[1]);
+        assert.ok(
+            duration >= 350 && duration <= 400,
+            `KPI counter animation duration (${duration}ms) must be between 350ms and 400ms`
+        );
+        assert.equal(duration, 380, 'Default duration is set to 380ms');
+    });
+});
+

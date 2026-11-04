@@ -41,6 +41,7 @@ test-results/
 
 # Local AI agent / OpenCode worktree data
 .claude/
+.agents/teamwork/
 
 # Local-only security and audit reports (not for publication)
 local-only/

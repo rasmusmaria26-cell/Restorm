@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAP Integration Interfaces — Fiori Elements Proof of Concept</title>
+    <link rel="icon" href="data:,">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: "72", "72full", Arial, Helvetica, sans-serif;
+            background-color: #F5F6F8;
+            color: #1D2D3E;
+        }
+        .fiori-top-shell {
+            background-color: #354A5F;
+            color: #FFFFFF;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+            font-size: 14px;
+        }
+        .fiori-shell-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+        .fiori-shell-badge {
+            background-color: #0854A0;
+            color: #FFFFFF;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        .fiori-shell-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .fiori-back-btn {
+            background-color: rgba(255, 255, 255, 0.15);
+            color: #FFFFFF;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            padding: 6px 12px;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 500;
+            transition: background-color 0.15s ease;
+        }
+        .fiori-back-btn:hover {
+            background-color: rgba(255, 255, 255, 0.25);
+        }
+        #fiori-container {
+            height: calc(100% - 48px);
+            width: 100%;
+            overflow: auto;
+        }
+        /* Offline Fallback Fiori Theme Container */
+        .fiori-list-report-shell {
+            padding: 20px;
+            max-width: 1280px;
+            margin: 0 auto;
+        }
+        .fiori-filter-bar {
+            background: #FFFFFF;
+            border-radius: 6px;
+            padding: 16px 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .fiori-filter-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1D2D3E;
+        }
+        .fiori-table-card {
+            background: #FFFFFF;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+        .fiori-table-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #E5E9EC;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .fiori-table-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1D2D3E;
+        }
+        .fiori-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+        .fiori-table th {
+            background: #FAFAFB;
+            color: #556B82;
+            padding: 12px 16px;
+            border-bottom: 1px solid #E5E9EC;
+            font-weight: 600;
+        }
+        .fiori-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #F0F2F4;
+            color: #2D3E50;
+        }
+        .fiori-table tr:hover td {
+            background: #F5F8FA;
+        }
+        .fiori-badge-active {
+            background: #E8F5E9;
+            color: #2E7D32;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 11px;
+            display: inline-block;
+        }
+        .fiori-badge-critical {
+            background: #FFEBEE;
+            color: #C62828;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 11px;
+            display: inline-block;
+        }
+        .fiori-badge-warning {
+            background: #FFF8E1;
+            color: #F57F17;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 11px;
+            display: inline-block;
+        }
+
+        /* Fiori Login Modal */
+        .fiori-login-backdrop {
+            position: fixed;
+            top: 48px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(29, 45, 62, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(2px);
+        }
+        .fiori-login-card {
+            background: #FFFFFF;
+            border-radius: 8px;
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+            width: 100%;
+            max-width: 440px;
+            padding: 28px;
+            text-align: center;
+        }
+        .fiori-login-header h2 {
+            margin: 10px 0 6px 0;
+            font-size: 18px;
+            color: #1D2D3E;
+        }
+        .fiori-login-header p {
+            margin: 0 0 20px 0;
+            font-size: 13px;
+            color: #556B82;
+        }
+        .fiori-quick-roles {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .fiori-role-btn {
+            background: #F8FAFC;
+            border: 1px solid #D5DDE5;
+            border-radius: 6px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            color: #1D2D3E;
+        }
+        .fiori-role-btn:hover {
+            background: #EBF3FB;
+            border-color: #0854A0;
+            color: #0854A0;
+        }
+        .fiori-role-btn strong {
+            font-size: 14px;
+        }
+        .fiori-role-btn span {
+            font-size: 11px;
+            color: #556B82;
+        }
+        .fiori-switch-user-btn {
+            background: rgba(255, 255, 255, 0.15);
+            color: #FFFFFF;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            margin-left: 8px;
+        }
+        .fiori-switch-user-btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+    </style>
+
+    <!-- Ambient Auth Interceptor for SAPUI5 OData V4 Requests -->
+    <script>
+        window._restormAuth = sessionStorage.getItem('restorm_fiori_auth') || '';
+        (function() {
+            var origFetch = window.fetch;
+            window.fetch = function(resource, init) {
+                init = init || {};
+                var url = (typeof resource === 'string') ? resource : (resource ? resource.url : '');
+                if (window._restormAuth && url && url.indexOf('/odata/') !== -1) {
+                    var h = init.headers || {};
+                    if (h instanceof Headers) {
+                        if (!h.has('Authorization')) h.set('Authorization', window._restormAuth);
+                    } else if (Array.isArray(h)) {
+                        h.push(['Authorization', window._restormAuth]);
+                    } else {
+                        if (!h['Authorization']) h['Authorization'] = window._restormAuth;
+                    }
+                    init.headers = h;
+                }
+                return origFetch.call(this, resource, init);
+            };
+
+            var origOpen = XMLHttpRequest.prototype.open;
+            var origSend = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function(method, url) {
+                this._reqUrl = url;
+                return origOpen.apply(this, arguments);
+            };
+            XMLHttpRequest.prototype.send = function() {
+                if (window._restormAuth && this._reqUrl && this._reqUrl.indexOf('/odata/') !== -1) {
+                    try { this.setRequestHeader('Authorization', window._restormAuth); } catch(e) {}
+                }
+                return origSend.apply(this, arguments);
+            };
+        })();
+    </script>
+
+    <!-- Suppress FLP telemetry and feedback in standalone mode -->
+    <script>
+        window["sap-ushell-config"] = {
+            services: {
+                UsageAnalytics: { config: { enabled: false } },
+                EndUserFeedback: { config: { enabled: false } }
+            }
+        };
+    </script>
+
+    <!-- SAPUI5 Bootstrap with fallback detection -->
+    <script id="sap-ui-bootstrap"
+            src="https://ui5.sap.com/resources/sap-ui-core.js"
+            data-sap-ui-theme="sap_horizon"
+            data-sap-ui-libs="sap.m, sap.ui.core, sap.fe.core, sap.fe.templates"
+            data-sap-ui-resourceroots='{
+                "sap.retrysentinel.interfaces": "./"
+            }'
+            data-sap-ui-compatversion="edge"
+            data-sap-ui-async="true"
+            data-sap-ui-preload="off"
+            data-sap-ui-xx-componentpreload="off"
+            data-sap-ui-frameoptions="trusted"
+            data-sap-ui-flexibilityServices='[{"connector": "LocalStorageConnector"}]'
+            data-sap-ui-statistics="false"
+            data-sap-ui-fesr="false">
+    </script>
+</head>
+<body class="sapUiBody" id="content">
+    <!-- Fiori Shell Top Bar -->
+    <div class="fiori-top-shell">
+        <div class="fiori-shell-title">
+            <span>Restorm</span>
+            <span class="fiori-shell-badge">SAP Fiori Elements</span>
+            <span>Interfaces List Report</span>
+        </div>
+        <div class="fiori-shell-nav">
+            <span id="serviceStatus" style="font-size: 12px; color: #A5D6A7;">● OData V4 Connected</span>
+            <a href="/" class="fiori-back-btn">← Operations Dashboard</a>
+        </div>
+    </div>
+
+    <!-- Fiori Authentication Dialog (Shown when not yet authenticated) -->
+    <div id="fioriLoginModal" class="fiori-login-backdrop" style="display: none;">
+        <div class="fiori-login-card">
+            <div class="fiori-login-header">
+                <div style="font-size: 32px; margin-bottom: 8px;">🔐</div>
+                <h2>Sign in to SAP Fiori View</h2>
+                <p>Choose an authorized role to access OData V4 monitoring telemetry:</p>
+            </div>
+            <div class="fiori-quick-roles">
+                <button type="button" class="fiori-role-btn" onclick="fioriLogin('admin', 'admin')">
+                    <strong>admin</strong> <span>SimulatorAdmin (Full Access)</span>
+                </button>
+                <button type="button" class="fiori-role-btn" onclick="fioriLogin('bob', 'bob')">
+                    <strong>bob</strong> <span>SupportOperator (Operator)</span>
+                </button>
+                <button type="button" class="fiori-role-btn" onclick="fioriLogin('alice', 'alice')">
+                    <strong>alice</strong> <span>SupportViewer (Read Only)</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Fiori Application Outlet -->
+    <div id="fiori-container">
+        <!-- Main Component Mount Target -->
+        <div id="fioriRootContainer" style="height: 100%; width: 100%;"></div>
+
+        <!-- Standalone Fallback Fiori Template (Activates immediately if UI5 CDN is blocked or offline) -->
+        <div id="offlineFallback" style="display: none;" class="fiori-list-report-shell">
+            <div class="fiori-filter-bar">
+                <div>
+                    <div class="fiori-filter-title">Monitored Interfaces</div>
+                    <div style="font-size: 13px; color: #556B82; margin-top: 4px;">SAP Cloud Integration & S/4HANA OData Endpoints</div>
+                </div>
+                <div style="font-size: 12px; color: #556B82;">
+                    Standard Vocabularies: <code>@UI.LineItem</code>, <code>@UI.HeaderInfo</code>
+                </div>
+            </div>
+
+            <div class="fiori-table-card">
+                <div class="fiori-table-header">
+                    <span class="fiori-table-title" id="tableCount">Interfaces (Loading…)</span>
+                    <button type="button" id="btnRefreshFiori" style="padding: 6px 12px; background: #0854A0; color: #fff; border: none; border-radius: 4px; font-size: 12px; cursor: pointer;">Adapt Filters</button>
+                </div>
+                <table class="fiori-table">
+                    <thead>
+                        <tr>
+                            <th>Interface Name</th>
+                            <th>Source</th>
+                            <th>Target</th>
+                            <th>Status</th>
+                            <th>Expected Schedule</th>
+                            <th>Max Retries (Rule A)</th>
+                            <th>Queue Limit (Rule B)</th>
+                            <th>Max Age SLA (Rule C)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fioriTableBody">
+                        <tr><td colspan="8" style="text-align: center; color: #7F8C8D;">Loading OData V4 records…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Explicitly initialize the Fiori Elements application once SAPUI5 core is ready
+        (function bootFioriApp() {
+            function launchComponent() {
+                if (typeof sap === 'undefined' || !sap.ui || typeof sap.ui.getCore !== 'function') {
+                    console.warn('[Fiori Elements PoC] SAPUI5 core unavailable; rendering fallback List Report.');
+                    renderStandaloneFioriReport();
+                    return;
+                }
+
+                sap.ui.getCore().attachInit(function () {
+                    sap.ui.require([
+                        "sap/ui/core/Component",
+                        "sap/ui/core/ComponentContainer"
+                    ], function (Component, ComponentContainer) {
+                        console.log('[Fiori Elements PoC] Instantiating Component sap.retrysentinel.interfaces...');
+                        Component.create({
+                            name: "sap.retrysentinel.interfaces",
+                            id: "interfacesApp"
+                        }).then(function (oComponent) {
+                            console.log('[Fiori Elements PoC] Component created successfully. Attaching to DOM container...');
+                            var oContainer = new ComponentContainer({
+                                component: oComponent,
+                                height: "100%",
+                                width: "100%",
+                                autoPrefixId: true
+                            });
+                            oContainer.placeAt("fioriRootContainer");
+                            console.log('[Fiori Elements PoC] Component attached to #fioriRootContainer');
+                        }).catch(function (err) {
+                            console.error('[Fiori Elements PoC] Component.create rejected:', err);
+                            renderStandaloneFioriReport();
+                        });
+                    }, function (requireErr) {
+                        console.error('[Fiori Elements PoC] Failed to require Component modules:', requireErr);
+                        renderStandaloneFioriReport();
+                    });
+                });
+            }
+
+            if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                launchComponent();
+            } else {
+                window.addEventListener('DOMContentLoaded', launchComponent);
+            }
+        })();
+
+        async function renderStandaloneFioriReport() {
+            var fallback = document.getElementById('offlineFallback');
+            if (fallback) fallback.style.display = 'block';
+
+            try {
+                var res = await fetch('/odata/v4/monitoring/Interfaces?$expand=snapshots($orderby=capturedAt desc;$top=1)');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                var data = await res.json();
+                var items = data.value || [];
+
+                document.getElementById('tableCount').textContent = 'Interfaces (' + items.length + ')';
+                var tbody = document.getElementById('fioriTableBody');
+                tbody.innerHTML = '';
+
+                items.forEach(function(item) {
+                    var tr = document.createElement('tr');
+                    var statusBadge = item.active ? '<span class="fiori-badge-active">Active</span>' : '<span style="color:#7F8C8D">Inactive</span>';
+                    tr.innerHTML = '<td><strong>' + escapeHtml(item.name) + '</strong></td>' +
+                        '<td>' + escapeHtml(item.sourceSystem || '—') + '</td>' +
+                        '<td>' + escapeHtml(item.targetSystem || '—') + '</td>' +
+                        '<td>' + statusBadge + '</td>' +
+                        '<td>' + escapeHtml(item.expectedSchedule || 'Continuous') + '</td>' +
+                        '<td>' + (item.maxRetryThreshold || 100) + '</td>' +
+                        '<td>' + (item.queueGrowthLimit || 200) + '</td>' +
+                        '<td>' + (item.oldMessageAgeLimitSeconds || 600) + 's</td>';
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                console.error('[Fiori Elements PoC] Error rendering list:', err);
+                document.getElementById('fioriTableBody').innerHTML = '<tr><td colspan="8" style="text-align: center; color: #D32F2F;">Failed to fetch OData records: ' + escapeHtml(err.message) + '</td></tr>';
+            }
+        }
+
+        function escapeHtml(str) {
+            var d = document.createElement('div');
+            d.textContent = str || '';
+            return d.innerHTML;
+        }
+
+        function updateAuthUI() {
+            var auth = window._restormAuth;
+            var statusEl = document.getElementById('serviceStatus');
+            var modalEl = document.getElementById('fioriLoginModal');
+
+            if (!auth) {
+                if (statusEl) statusEl.innerHTML = '<span style="color:#FFA726;">● Sign-In Required</span>';
+                if (modalEl) modalEl.style.display = 'flex';
+            } else {
+                if (modalEl) modalEl.style.display = 'none';
+                try {
+                    var decoded = atob(auth.replace(/^Basic\s+/i, ''));
+                    var user = decoded.split(':')[0] || 'User';
+                    if (statusEl) {
+                        statusEl.innerHTML = '<span style="color:#A5D6A7;">● Connected as <strong>' + escapeHtml(user) + '</strong></span>' +
+                            ' <button type="button" class="fiori-switch-user-btn" onclick="fioriLogout()" title="Sign out or change user role">Switch User</button>';
+                    }
+                } catch (e) {
+                    if (statusEl) statusEl.innerHTML = '<span style="color:#A5D6A7;">● OData V4 Connected</span>';
+                }
+            }
+        }
+
+        window.fioriLogin = function(u, p) {
+            var token = 'Basic ' + btoa(u + ':' + p);
+            try { sessionStorage.setItem('restorm_fiori_auth', token); } catch (e) {}
+            window._restormAuth = token;
+            window.location.reload();
+        };
+
+        window.fioriLogout = function() {
+            try { sessionStorage.removeItem('restorm_fiori_auth'); } catch (e) {}
+            window._restormAuth = '';
+            window.location.reload();
+        };
+
+        // Initialize authentication UI state
+        updateAuthUI();
+    </script>
+</body>
+</html>
+

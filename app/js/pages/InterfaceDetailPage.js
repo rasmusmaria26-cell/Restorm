@@ -48,13 +48,19 @@ function statusForSnapshot(snap, iface) {
     const limit = Number(iface.queueGrowthLimit) || 200;
     const retryLimit = Number(iface.maxRetryThreshold) || 100;
     const ageLimit = Number(iface.oldMessageAgeLimitSeconds) || 600;
-    if (pending >= limit || retry >= retryLimit || age >= ageLimit) return 'critical';
-    if (pending >= limit * 0.7 || retry >= retryLimit * 0.7 || age >= ageLimit * 0.7) return 'high';
+    if (retry >= retryLimit) return 'critical';
+    if (pending >= limit || age >= ageLimit) return 'high';
+    if (pending >= limit * 0.7 || retry >= retryLimit * 0.7 || age >= ageLimit * 0.7) return 'predictive-warning';
     return 'healthy';
 }
 
 function statusLabel(status) {
-    return { healthy: 'Healthy', high: 'Warning', critical: 'Critical' }[status] || 'Healthy';
+    return {
+        healthy: 'Healthy',
+        high: 'High',
+        critical: 'Critical',
+        'predictive-warning': 'Predictive Warning'
+    }[status] || 'Healthy';
 }
 
 function formatAge(seconds) {
@@ -101,6 +107,7 @@ function permissionContext(context) {
 /* ------------------------------------------------------------------ */
 
 function renderHistoryChart(snapshots, width, height) {
+    const recent = (snapshots || []).slice(-20);
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     svg.setAttribute('class', 'history-svg');
@@ -111,7 +118,7 @@ function renderHistoryChart(snapshots, width, height) {
     const effW = width - padX - 30;
     const effH = height - padY - 24;
 
-    if (!snapshots || snapshots.length === 0) {
+    if (!recent || recent.length === 0) {
         const line = document.createElementNS(SVG_NS, 'line');
         line.setAttribute('x1', padX); line.setAttribute('y1', height - padY);
         line.setAttribute('x2', width - 30); line.setAttribute('y2', height - padY);
@@ -121,8 +128,8 @@ function renderHistoryChart(snapshots, width, height) {
         return svg;
     }
 
-    const pendingVals = snapshots.map(s => Number(s.pendingCount) || 0);
-    const retryVals = snapshots.map(s => Number(s.retryAttempts) || 0);
+    const pendingVals = recent.map(s => Number(s.pendingCount) || 0);
+    const retryVals = recent.map(s => Number(s.retryAttempts) || 0);
     const maxVal = Math.max(...pendingVals, ...retryVals, 10);
     const scaleY = (val) => padY + effH - (val / maxVal) * effH;
 
@@ -142,23 +149,24 @@ function renderHistoryChart(snapshots, width, height) {
     }
 
     // X axis labels (first, middle, last)
-    const xLabels = [0, Math.floor((snapshots.length - 1) / 2), snapshots.length - 1];
+    const xLabels = [0, Math.floor((recent.length - 1) / 2), recent.length - 1];
     for (const idx of xLabels) {
-        const x = padX + (idx / (snapshots.length - 1 || 1)) * effW;
+        const x = padX + (idx / (recent.length - 1 || 1)) * effW;
         const label = document.createElementNS(SVG_NS, 'text');
         label.setAttribute('x', x);
         label.setAttribute('y', height - padY + 16);
         label.setAttribute('font-size', '9');
         label.setAttribute('fill', 'var(--color-slate)');
         label.setAttribute('text-anchor', 'middle');
-        label.textContent = new Date(snapshots[idx].capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const capAt = recent[idx] ? recent[idx].capturedAt : null;
+        label.textContent = capAt ? new Date(capAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
         svg.appendChild(label);
     }
 
     // Lines: pendingCount
     function polyline(vals, stroke) {
         const pts = vals.map((v, idx) => {
-            const x = padX + (idx / (snapshots.length - 1 || 1)) * effW;
+            const x = padX + (idx / (recent.length - 1 || 1)) * effW;
             const y = scaleY(v);
             return `${x.toFixed(1)},${y.toFixed(1)}`;
         }).join(' ');
@@ -176,7 +184,7 @@ function renderHistoryChart(snapshots, width, height) {
     polyline(retryVals, 'var(--color-high)');
 
     // Latest dots
-    const lastIdx = snapshots.length - 1;
+    const lastIdx = recent.length - 1;
     const lastX = padX + effW;
     const pendingDot = document.createElementNS(SVG_NS, 'circle');
     pendingDot.setAttribute('cx', lastX);
